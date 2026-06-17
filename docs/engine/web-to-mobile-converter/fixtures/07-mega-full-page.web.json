@@ -1,0 +1,464 @@
+{
+  "path": "/mega",
+  "label": "Mega Demo",
+  "rootProps": {
+    "direction": "rtl",
+    "language": "ar",
+    "primary": "#0b78c5",
+    "surface": "#f6f8fc",
+    "text": "#14243f",
+    "neutral": "#6b7d93",
+    "bodyFont": "dm-sans",
+    "headerBrandTitle": "SOUQ MEGA",
+    "headerBackgroundColor": "#0b78c5",
+    "headerTextColor": "#ffffff",
+    "headerShowDrawerButton": "on",
+    "footerVisible": true,
+    "footerTagline": "Your one-stop shop for everything",
+    "footerTaglineAr": "متجرك الشامل لكل شيء",
+    "footerBackgroundColor": "#10213a",
+    "footerTextColor": "#ffffff",
+    "footerColumns": [
+      {
+        "title": "Quick Links",
+        "titleAr": "روابط سريعة",
+        "links": [
+          { "label": "About", "labelAr": "حول", "href": "/about" },
+          { "label": "Contact", "labelAr": "اتصل بنا", "href": "/contact" }
+        ]
+      }
+    ]
+  },
+  "blocks": [
+    { "type": "SiteHeader" },
+
+    {
+      "type": "Section",
+      "props": {
+        "backgroundColor": "#F9FAFB",
+        "paddingTop": "24px",
+        "paddingBottom": "24px",
+        "content": [
+          {
+            "type": "Heading",
+            "props": { "text": "Welcome to SOUQ Mega", "textAr": "مرحباً بكم في سوق ميغا", "level": "h1", "align": "center" }
+          },
+          {
+            "type": "Text",
+            "props": { "text": "Discover amazing products at unbeatable prices.", "textAr": "اكتشف منتجات مذهلة بأسعار لا تُقاوم.", "align": "center" }
+          },
+          {
+            "type": "Space",
+            "props": { "height": "16px" }
+          },
+          {
+            "type": "Button",
+            "props": { "text": "Shop Now", "labelAr": "تسوق الآن", "variant": "primary", "href": "/products", "fullWidth": false }
+          },
+          {
+            "type": "Link",
+            "props": { "text": "Learn More", "labelAr": "اعرف المزيد", "href": "/about", "target": "_self" }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "backgroundColor": "#ffffff",
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Flex",
+            "props": {
+              "direction": "row",
+              "alignItems": "center",
+              "justifyContent": "spaceEvenly",
+              "gap": 12,
+              "items": [
+                {
+                  "type": "Icon",
+                  "props": { "name": "truck", "size": 28, "color": "#0b78c5" }
+                },
+                {
+                  "type": "Icon",
+                  "props": { "name": "shield", "size": 28, "color": "#0b78c5" }
+                },
+                {
+                  "type": "ContentImage",
+                  "props": { "src": "https://picsum.photos/seed/promo/600/300", "alt": "Promo", "width": 600, "height": 300 }
+                }
+              ]
+            }
+          },
+          {
+            "type": "Divider",
+            "props": { "color": "#E5E7EB", "thickness": 1, "margin": 16 }
+          },
+          {
+            "type": "Badge",
+            "props": { "text": "NEW", "variant": "primary", "size": "small" }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "backgroundColor": "#f3f4f6",
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Card",
+            "props": {
+              "elevation": 2,
+              "padding": 16,
+              "content": [
+                {
+                  "type": "Heading",
+                  "props": { "text": "Special Offer", "textAr": "عرض خاص", "level": "h2" }
+                },
+                {
+                  "type": "Text",
+                  "props": { "text": "Get 50% off on your first purchase!", "textAr": "احصل على خصم 50% على مشترياتك الأولى!" }
+                },
+                {
+                  "type": "Button",
+                  "props": { "text": "Claim Now", "labelAr": "اطلب الآن", "variant": "primary", "href": "/offer" }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "backgroundColor": "#ffffff",
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Hero",
+            "props": {
+              "variant": "background",
+              "title": "Summer Sale",
+              "titleAr": "تخفيضات الصيف",
+              "description": "Up to 70% off on selected items.",
+              "descriptionAr": "خصم يصل إلى 70% على منتجات مختارة.",
+              "backgroundImage": "https://picsum.photos/seed/summer/1200/600",
+              "textColor": "#ffffff",
+              "height": "400px",
+              "buttons": [
+                { "text": "Shop Sale", "labelAr": "تسوق التخفيضات", "href": "/sale", "variant": "primary" },
+                { "text": "Learn More", "labelAr": "اعرف المزيد", "href": "/about-sale", "variant": "ghost" }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "ProductsGrid",
+            "props": { "collection": "all", "columns": "2", "gap": 16 }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "ProductCarousel",
+            "props": { "title": "Trending Now", "titleAr": "الأكثر رواجاً", "collection": "trending", "autoplay": true }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "ProductCard",
+            "props": {
+              "layout": "vertical",
+              "image": "https://picsum.photos/seed/product/400/400",
+              "title": "Wireless Headphones",
+              "titleAr": "سماعات لاسلكية",
+              "price": "79.99",
+              "originalPrice": "129.99",
+              "rating": 4.5,
+              "reviews": 128
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Testimonials",
+            "props": {
+              "source": "inline",
+              "layoutVariant": "grid",
+              "columns": 2,
+              "itemCount": 2,
+              "inlineItems": [
+                {
+                  "id": "t1",
+                  "name": "Ahmed",
+                  "nameAr": "أحمد",
+                  "text": "Amazing quality and fast delivery!",
+                  "textAr": "جودة مذهلة وتوصيل سريع!",
+                  "role": "Verified Buyer",
+                  "roleAr": "مشترٍ موثّق",
+                  "rating": 5
+                },
+                {
+                  "id": "t2",
+                  "name": "Sara",
+                  "nameAr": "سارة",
+                  "text": "Great customer support.",
+                  "textAr": "دعم عملاء رائع.",
+                  "role": "Verified Buyer",
+                  "roleAr": "مشترٍ موثّق",
+                  "rating": 4
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "CartSection",
+            "props": {
+              "items": [
+                { "id": "p1", "title": "Product 1", "titleAr": "منتج 1", "price": 29.99, "quantity": 2, "image": "https://picsum.photos/seed/p1/200/200" },
+                { "id": "p2", "title": "Product 2", "titleAr": "منتج 2", "price": 49.99, "quantity": 1, "image": "https://picsum.photos/seed/p2/200/200" }
+              ]
+            }
+          },
+          {
+            "type": "CartSummary",
+            "props": {
+              "subtotal": 109.97,
+              "shipping": 9.99,
+              "tax": 10.99,
+              "total": 130.95,
+              "currency": "USD"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "CheckoutForm",
+            "props": {
+              "fields": [
+                { "name": "fullName", "label": "Full Name", "labelAr": "الاسم الكامل", "type": "text", "required": true },
+                { "name": "email", "label": "Email", "labelAr": "البريد الإلكتروني", "type": "email", "required": true },
+                { "name": "phone", "label": "Phone", "labelAr": "رقم الهاتف", "type": "tel", "required": true },
+                { "name": "address", "label": "Address", "labelAr": "العنوان", "type": "text", "required": true }
+              ],
+              "submitLabel": "Place Order",
+              "submitLabelAr": "تقديم الطلب",
+              "submissionAction": {
+                "type": "cubitCall",
+                "method": "placeOrder",
+                "params": {},
+                "successRoute": "/order-confirmation"
+              }
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "OrderList",
+            "props": {
+              "status": "all",
+              "pageSize": 10
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Grid",
+            "props": {
+              "columns": "3",
+              "gap": 8,
+              "items": [
+                { "type": "Text", "props": { "text": "A" } },
+                { "type": "Text", "props": { "text": "B" } },
+                { "type": "Text", "props": { "text": "C" } },
+                { "type": "Text", "props": { "text": "D" } }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Group",
+            "props": {
+              "direction": "column",
+              "gap": 8,
+              "items": [
+                { "type": "Text", "props": { "text": "Item 1" } },
+                { "type": "Text", "props": { "text": "Item 2" } }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Video",
+            "props": {
+              "src": "https://example.com/video.mp4",
+              "poster": "https://picsum.photos/seed/video/600/400",
+              "controls": true
+            }
+          },
+          {
+            "type": "VideoEmbed",
+            "props": {
+              "src": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              "size": "theme-315",
+              "radius": "theme-md"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Html",
+            "props": { "html": "<p>Hello <strong>world</strong></p>", "textAr": "مرحباً بالعالم" }
+          },
+          {
+            "type": "Countdown",
+            "props": {
+              "endDate": "2026-12-31T23:59:59Z",
+              "title": "Sale Ends In",
+              "titleAr": "ينتهي التخفيض خلال"
+            }
+          },
+          {
+            "type": "CookieConsent",
+            "props": {
+              "message": "We use cookies to improve your experience.",
+              "messageAr": "نستخدم ملفات تعريف الارتباط لتحسين تجربتك.",
+              "acceptLabel": "Accept",
+              "acceptLabelAr": "قبول"
+            }
+          },
+          {
+            "type": "SearchModal",
+            "props": {
+              "placeholder": "Search products...",
+              "placeholderAr": "ابحث عن منتجات...",
+              "action": "/search"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "12px",
+        "paddingBottom": "12px",
+        "content": [
+          {
+            "type": "Logo",
+            "props": {
+              "src": "https://picsum.photos/seed/logo/200/60",
+              "alt": "SOUQ Mega",
+              "height": 40
+            }
+          }
+        ]
+      }
+    },
+
+    { "type": "SiteFooter" }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "fragment": "pageBody",
+  "route": "/cart",
+  "scroll": "vertical",
+  "nodes": [
+    {
+      "id": "cart-lines-repeat-1",
+      "type": "column",
+      "props": { "crossAxis": "stretch", "gap": 12 },
+      "children": [
+        {
+          "id": "cart-repeat-container-2",
+          "type": "container",
+          "child": {
+            "id": "cart-repeat-list-3",
+            "type": "column",
+            "props": { "gap": 8 },
+            "itemBuilder": {
+              "type": "repeat",
+              "source": "cart.items",
+              "item": {
+                "id": "cart-line-card-4",
+                "type": "card",
+                "child": {
+                  "id": "cart-line-row-5",
+                  "type": "row",
+                  "props": { "crossAxis": "center", "gap": 12 },
+                  "children": [
+                    {
+                      "id": "cart-line-title-6",
+                      "type": "text",
+                      "props": { "valuePath": "item.productTitle", "fontSize": 14, "expand": true }
+                    },
+                    {
+                      "id": "cart-line-remove-7",
+                      "type": "button",
+                      "props": { "label": "×", "variant": "ghost" },
+                      "tap": {
+                        "type": "cubitCall",
+                        "cubit": "cart",
+                        "method": "removeItem",
+                        "params": { "variantId": { "source": "item", "field": "variantId" } }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cart-summary-col-8",
+      "type": "column",
+      "props": { "gap": 4 },
+      "children": [
+        {
+          "id": "cart-subtotal-label-9",
+          "type": "text",
+          "props": { "valuePath": "cart.subtotal", "fontSize": 16, "fontWeight": "bold" }
+        }
+      ]
+    },
+    {
+      "id": "cart-checkout-btn-10",
+      "type": "button",
+      "props": { "label": "إتمام الطلب", "variant": "primary", "fullWidth": true, "height": 48 },
+      "tap": { "type": "navigate", "route": "/checkout", "navigation_type": "push" }
+    }
+  ]
+}

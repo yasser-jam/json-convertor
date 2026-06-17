@@ -1,0 +1,28 @@
+{
+  "type": "Section",
+  "props": {
+    "backgroundColor": "#F9FAFB",
+    "paddingTop": "32px",
+    "paddingBottom": "32px",
+    "content": [
+      {
+        "type": "Flex",
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "gap": 16,
+          "items": [
+            {
+              "type": "Button",
+              "props": {
+                "label": "Shop Now",
+                "variant": "primary",
+                "href": "/products"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "path": "/blocks-catalog",
+  "label": "BLOCKS.md Catalog Sample",
+  "rootProps": {
+    "direction": "rtl",
+    "language": "ar",
+    "primary": "#0b78c5",
+    "surface": "#f6f8fc",
+    "text": "#14243f",
+    "neutral": "#6b7d93",
+    "radiusMd": "12px"
+  },
+  "blocks": [
+    {
+      "type": "Section",
+      "props": {
+        "paddingTop": "24px",
+        "paddingBottom": "24px",
+        "paddingHorizontal": "16px",
+        "content": [
+          {
+            "type": "ContentHeading",
+            "props": { "text": "عنوان", "level": "h2", "align": "right" }
+          },
+          {
+            "type": "ContentParagraph",
+            "props": {
+              "text": "نص تجريبي",
+              "fontSize": "theme-sm",
+              "color": "theme-neutral",
+              "align": "right"
+            }
+          },
+          {
+            "type": "ContentImage",
+            "props": {
+              "src": "https://example.com/banner.jpg",
+              "alt": "بانر",
+              "objectFit": "cover",
+              "radius": "theme-md"
+            }
+          },
+          {
+            "type": "VideoEmbed",
+            "props": {
+              "src": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              "size": "theme-315",
+              "radius": "theme-md"
+            }
+          },
+          {
+            "type": "Group",
+            "props": {
+              "direction": "row",
+              "gap": 12,
+              "content": [
+                { "type": "Text", "props": { "text": "عنصر 1" } },
+                { "type": "Text", "props": { "text": "عنصر 2" } }
+              ]
+            }
+          },
+          {
+            "type": "ImageGallery",
+            "props": {
+              "mode": "grid",
+              "gridColumns": 2,
+              "images": [
+                { "src": "https://example.com/a.jpg", "alt": "A" },
+                { "src": "https://example.com/b.jpg", "alt": "B" }
+              ]
+            }
+          },
+          {
+            "type": "Testimonials",
+            "props": {
+              "source": "inline",
+              "layoutVariant": "grid",
+              "columns": 2,
+              "itemCount": 2,
+              "inlineItems": [
+                {
+                  "id": "t1",
+                  "nameAr": "سارة",
+                  "roleAr": "زبونة",
+                  "textAr": "خدمة ممتازة",
+                  "rating": 5
+                },
+                {
+                  "id": "t2",
+                  "nameAr": "أحمد",
+                  "roleAr": "تاجر",
+                  "textAr": "جودة عالية",
+                  "rating": 4
+                }
+              ]
+            }
+          },
+          {
+            "type": "ProductCard",
+            "props": {
+              "product": { "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt", "price": 120 },
+              "variant": "vertical",
+              "showAddToCart": true
+            }
+          },
+          {
+            "type": "ProductsGrid",
+            "props": {
+              "collection": "featured",
+              "columns": "2",
+              "maxRows": "4",
+              "gap": "md",
+              "cardVariant": "compact"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "type": "Hero",
+  "props": {
+    "title": "Summer Collection 2026",
+    "description": "<p>Discover lightweight styles crafted for warm days.</p>",
+    "align": "center",
+    "padding": "80px",
+    "buttons": [
+      {
+        "label": "Shop Now",
+        "labelAr": "تسوق الآن",
+        "href": "/products",
+        "variant": "primary"
+      }
+    ],
+    "image": {
+      "url": "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1200",
+      "mode": "background"
+    }
+  }
+}

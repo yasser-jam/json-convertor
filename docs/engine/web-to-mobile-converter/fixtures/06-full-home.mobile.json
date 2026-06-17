@@ -1,0 +1,98 @@
+{
+  "fullEnvelope": false,
+  "note": "Composite page fragment — merge theme/navigation from 01-page-shell.mobile.json",
+  "pages": [
+    {
+      "id": "page-home",
+      "route": "/home",
+      "title": "Home",
+      "background": "#FFFFFF",
+      "scroll": "vertical",
+      "appBar": {
+        "id": "home-app-bar",
+        "type": "appBar",
+        "props": {
+          "title": "SOOQ",
+          "showBackButton": false
+        }
+      },
+      "body": [
+        {
+          "id": "home-section-1",
+          "type": "container",
+          "style": {
+            "color": "#F9FAFB",
+            "padding": { "top": 32, "bottom": 32, "left": 16, "right": 16 }
+          },
+          "child": {
+            "id": "home-section-col-2",
+            "type": "column",
+            "props": { "crossAxis": "stretch", "gap": 16 },
+            "children": [
+              {
+                "id": "home-cta-row-3",
+                "type": "row",
+                "props": { "mainAxis": "start", "crossAxis": "center", "gap": 16 },
+                "children": [
+                  {
+                    "id": "home-shop-btn-4",
+                    "type": "button",
+                    "props": { "label": "تسوق الآن", "variant": "primary", "height": 48 },
+                    "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
+                  }
+                ]
+              },
+              {
+                "id": "home-product-grid-5",
+                "type": "gridView",
+                "props": {
+                  "crossAxisCount": 2,
+                  "mainAxisSpacing": 24,
+                  "crossAxisSpacing": 24,
+                  "enableInnerScroll": false,
+                  "data": {
+                    "source": "collection",
+                    "id": "home-products",
+                    "requestKey": "product-list",
+                    "requestUrl": "/api/v1/public/products?page=0&size=20",
+                    "page": 0,
+                    "size": 20
+                  }
+                },
+                "itemBuilder": {
+                  "type": "repeat",
+                  "source": "dataContext.requests.product-list.data",
+                  "item": {
+                    "id": "home-grid-item-6",
+                    "type": "card",
+                    "child": {
+                      "id": "home-grid-item-col-7",
+                      "type": "column",
+                      "children": [
+                        {
+                          "id": "home-grid-img-8",
+                          "type": "image",
+                          "props": { "source": "network", "urlPath": "item.image", "aspectRatio": 1, "fit": "cover" }
+                        },
+                        {
+                          "id": "home-grid-title-9",
+                          "type": "text",
+                          "props": { "valuePath": "item.name", "fontSize": 14, "textAlign": "right" }
+                        }
+                      ]
+                    },
+                    "tap": {
+                      "type": "navigate",
+                      "route": "/product/details/:productId",
+                      "navigation_type": "push"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

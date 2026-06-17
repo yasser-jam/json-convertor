@@ -1,0 +1,640 @@
+{
+  "schemaVersion": "1.0",
+  "app": {
+    "name": "SOOQ Merchant Mobile",
+    "bundleId": "com.sooq.merchant.mobile",
+    "apiBaseUrl": "https://sooq.up.railway.app",
+    "tenantId": "00000000-0000-0000-0000-000000000000",
+    "tenantSlug": "example-merchant"
+  },
+  "theme": {
+    "mode": "light",
+    "colors": {
+      "primary": "#0b78c5",
+      "surface": "#f6f8fc",
+      "background": "#F1F5F9",
+      "text": "#14243f",
+      "muted": "#6b7d93",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626"
+    },
+    "typography": {
+      "fontFamily": "Tajawal",
+      "scale": {
+        "xs": 12,
+        "sm": 14,
+        "md": 16,
+        "lg": 18,
+        "xl": 22,
+        "xxl": 28,
+        "display": 36
+      },
+      "weights": {
+        "normal": 400,
+        "medium": 500,
+        "bold": 700
+      },
+      "lineHeight": {
+        "tight": 1.25,
+        "normal": 1.5,
+        "relaxed": 1.75
+      }
+    },
+    "radius": {
+      "none": 0,
+      "sm": 8,
+      "md": 12,
+      "lg": 18,
+      "xl": 24,
+      "full": 9999
+    },
+    "spacing": {
+      "xs": 4,
+      "sm": 10,
+      "md": 16,
+      "lg": 24,
+      "xl": 36
+    },
+    "buttons": {
+      "sm": {
+        "height": 36,
+        "padX": 14,
+        "fontSize": 14,
+        "radius": 10
+      },
+      "md": {
+        "height": 48,
+        "padX": 18,
+        "fontSize": 16,
+        "radius": 12
+      },
+      "lg": {
+        "height": 56,
+        "padX": 26,
+        "fontSize": 16,
+        "radius": 14
+      }
+    }
+  },
+  "navigation": {
+    "type": "tabs",
+    "initialRoute": "/splash",
+    "shellExcludeRoutes": [
+      "/splash",
+      "/splash-carousel",
+      "/auth/login",
+      "/auth/otp-reset",
+      "/product/details",
+      "/categories",
+      "/checkout",
+      "/checkout/address",
+      "/checkout/payment",
+      "/checkout/success",
+      "/orders"
+    ],
+    "tabs": [
+      {
+        "id": "tab-home",
+        "label": "الرئيسية",
+        "icon": "home",
+        "route": "/home"
+      },
+      {
+        "id": "tab-categories",
+        "label": "الأقسام",
+        "icon": "grid_view",
+        "route": "/categories"
+      },
+      {
+        "id": "tab-search",
+        "label": "بحث",
+        "icon": "search",
+        "route": "/search"
+      },
+      {
+        "id": "tab-cart",
+        "label": "السلة",
+        "icon": "shopping_cart",
+        "route": "/cart"
+      },
+      {
+        "id": "tab-profile",
+        "label": "حسابي",
+        "icon": "person",
+        "route": "/profile"
+      }
+    ]
+  },
+  "pages": [
+    {
+      "id": "page-blocks-catalog",
+      "route": "/blocks-catalog",
+      "title": "BLOCKS.md Catalog Sample",
+      "background": "#FFFFFF",
+      "scroll": "vertical",
+      "appBar": {
+        "id": "blocks-catalog-app-bar",
+        "type": "appBar",
+        "props": {
+          "title": "BLOCKS.md Catalog Sample",
+          "showBackButton": true,
+          "backgroundColor": "#FFFFFF",
+          "foregroundColor": "#0F172A",
+          "elevation": 0
+        }
+      },
+      "body": [
+        {
+          "id": "section-container-1",
+          "type": "container",
+          "style": {
+            "padding": {
+              "top": 24,
+              "bottom": 24,
+              "left": 16,
+              "right": 16
+            }
+          },
+          "child": {
+            "id": "section-column-2",
+            "type": "column",
+            "props": {
+              "crossAxis": "stretch",
+              "mainAxis": "start",
+              "gap": 16
+            },
+            "children": [
+              {
+                "id": "heading-3",
+                "type": "text",
+                "props": {
+                  "value": "عنوان",
+                  "fontSize": 22,
+                  "fontWeight": "medium",
+                  "textAlign": "right"
+                }
+              },
+              {
+                "id": "text-4",
+                "type": "text",
+                "props": {
+                  "value": "نص تجريبي",
+                  "fontSize": 14,
+                  "textAlign": "right",
+                  "color": "#6b7d93"
+                }
+              },
+              {
+                "id": "image-5",
+                "type": "image",
+                "props": {
+                  "url": "https://example.com/banner.jpg",
+                  "source": "network",
+                  "alt": "بانر",
+                  "fit": "cover",
+                  "borderRadius": 16
+                }
+              },
+              {
+                "id": "youtube-6",
+                "type": "videoPlayer",
+                "props": {
+                  "url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+                  "controls": true,
+                  "autoPlay": false,
+                  "loop": false,
+                  "muted": false,
+                  "borderRadius": 16,
+                  "height": 315
+                }
+              },
+              {
+                "id": "row-7",
+                "type": "row",
+                "props": {
+                  "mainAxis": "start",
+                  "crossAxis": "center",
+                  "gap": 12
+                },
+                "children": [
+                  {
+                    "id": "text-8",
+                    "type": "text",
+                    "props": {
+                      "value": "عنصر 1",
+                      "fontSize": 16,
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "id": "text-9",
+                    "type": "text",
+                    "props": {
+                      "value": "عنصر 2",
+                      "fontSize": 16,
+                      "textAlign": "right"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "gallery-grid-15",
+                "type": "column",
+                "props": {
+                  "crossAxis": "stretch",
+                  "mainAxis": "start",
+                  "gap": 16
+                },
+                "children": [
+                  {
+                    "id": "gallery-row-14",
+                    "type": "row",
+                    "props": {
+                      "mainAxis": "spaceBetween",
+                      "crossAxis": "stretch",
+                      "gap": 16
+                    },
+                    "children": [
+                      {
+                        "id": "gallery-cell-12",
+                        "type": "container",
+                        "props": {
+                          "expand": true,
+                          "expandAxis": "horizontal"
+                        },
+                        "child": {
+                          "id": "gallery-image-10",
+                          "type": "image",
+                          "props": {
+                            "url": "https://example.com/a.jpg",
+                            "source": "network",
+                            "alt": "A",
+                            "fit": "cover",
+                            "borderRadius": 16
+                          }
+                        }
+                      },
+                      {
+                        "id": "gallery-cell-13",
+                        "type": "container",
+                        "props": {
+                          "expand": true,
+                          "expandAxis": "horizontal"
+                        },
+                        "child": {
+                          "id": "gallery-image-11",
+                          "type": "image",
+                          "props": {
+                            "url": "https://example.com/b.jpg",
+                            "source": "network",
+                            "alt": "B",
+                            "fit": "cover",
+                            "borderRadius": 16
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "testimonials-grid-31",
+                "type": "column",
+                "props": {
+                  "crossAxis": "stretch",
+                  "mainAxis": "start",
+                  "gap": 16
+                },
+                "children": [
+                  {
+                    "id": "tm-row-30",
+                    "type": "row",
+                    "props": {
+                      "mainAxis": "spaceBetween",
+                      "crossAxis": "stretch",
+                      "gap": 16
+                    },
+                    "children": [
+                      {
+                        "id": "tm-row-cell-28",
+                        "type": "container",
+                        "props": {
+                          "expand": true,
+                          "expandAxis": "horizontal"
+                        },
+                        "child": {
+                          "id": "testimonial-20",
+                          "type": "card",
+                          "props": {
+                            "elevation": 1,
+                            "borderRadius": 12
+                          },
+                          "child": {
+                            "id": "tm-body-21",
+                            "type": "column",
+                            "props": {
+                              "crossAxis": "start",
+                              "mainAxis": "start",
+                              "gap": 8
+                            },
+                            "children": [
+                              {
+                                "id": "tm-rating-16",
+                                "type": "text",
+                                "props": {
+                                  "value": "★★★★★",
+                                  "fontSize": 16,
+                                  "color": "#f59e0b"
+                                }
+                              },
+                              {
+                                "id": "tm-quote-17",
+                                "type": "text",
+                                "props": {
+                                  "value": "خدمة ممتازة",
+                                  "fontSize": 14,
+                                  "textAlign": "right"
+                                }
+                              },
+                              {
+                                "id": "tm-name-18",
+                                "type": "text",
+                                "props": {
+                                  "value": "سارة",
+                                  "fontSize": 14,
+                                  "fontWeight": "bold"
+                                }
+                              },
+                              {
+                                "id": "tm-role-19",
+                                "type": "text",
+                                "props": {
+                                  "value": "زبونة",
+                                  "fontSize": 12,
+                                  "color": "#6b7d93"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "tm-row-cell-29",
+                        "type": "container",
+                        "props": {
+                          "expand": true,
+                          "expandAxis": "horizontal"
+                        },
+                        "child": {
+                          "id": "testimonial-26",
+                          "type": "card",
+                          "props": {
+                            "elevation": 1,
+                            "borderRadius": 12
+                          },
+                          "child": {
+                            "id": "tm-body-27",
+                            "type": "column",
+                            "props": {
+                              "crossAxis": "start",
+                              "mainAxis": "start",
+                              "gap": 8
+                            },
+                            "children": [
+                              {
+                                "id": "tm-rating-22",
+                                "type": "text",
+                                "props": {
+                                  "value": "★★★★",
+                                  "fontSize": 16,
+                                  "color": "#f59e0b"
+                                }
+                              },
+                              {
+                                "id": "tm-quote-23",
+                                "type": "text",
+                                "props": {
+                                  "value": "جودة عالية",
+                                  "fontSize": 14,
+                                  "textAlign": "right"
+                                }
+                              },
+                              {
+                                "id": "tm-name-24",
+                                "type": "text",
+                                "props": {
+                                  "value": "أحمد",
+                                  "fontSize": 14,
+                                  "fontWeight": "bold"
+                                }
+                              },
+                              {
+                                "id": "tm-role-25",
+                                "type": "text",
+                                "props": {
+                                  "value": "تاجر",
+                                  "fontSize": 12,
+                                  "color": "#6b7d93"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "product-card-39",
+                "type": "card",
+                "props": {
+                  "elevation": 1,
+                  "borderRadius": 16
+                },
+                "child": {
+                  "id": "pc-body-40",
+                  "type": "column",
+                  "props": {
+                    "crossAxis": "start",
+                    "mainAxis": "start",
+                    "gap": 8
+                  },
+                  "children": [
+                    {
+                      "id": "pc-img-32",
+                      "type": "image",
+                      "props": {
+                        "url": "",
+                        "source": "network",
+                        "fit": "cover",
+                        "borderRadius": 16,
+                        "height": 200
+                      }
+                    },
+                    {
+                      "id": "pc-name-33",
+                      "type": "text",
+                      "props": {
+                        "value": "قميص",
+                        "fontSize": 14,
+                        "fontWeight": "bold"
+                      }
+                    },
+                    {
+                      "id": "pc-price-34",
+                      "type": "text",
+                      "props": {
+                        "value": "120",
+                        "fontSize": 14,
+                        "color": "#0b78c5"
+                      }
+                    },
+                    {
+                      "id": "pc-actions-38",
+                      "type": "row",
+                      "props": {
+                        "mainAxis": "start",
+                        "crossAxis": "center",
+                        "gap": 8
+                      },
+                      "children": [
+                        {
+                          "id": "pc-add-cart-35",
+                          "type": "button",
+                          "props": {
+                            "label": "أضف للسلة",
+                            "height": 40,
+                            "variant": "primary"
+                          },
+                          "tap": {
+                            "type": "cubitCall",
+                            "cubit": "cart",
+                            "method": "addItem",
+                            "params": {
+                              "productId": "prod_01"
+                            }
+                          }
+                        },
+                        {
+                          "id": "pc-view-36",
+                          "type": "button",
+                          "props": {
+                            "label": "التفاصيل",
+                            "height": 40,
+                            "variant": "secondary"
+                          },
+                          "tap": {
+                            "type": "navigate",
+                            "route": "/product/details/prod_01",
+                            "navigation_type": "push"
+                          }
+                        },
+                        {
+                          "id": "pc-wishlist-37",
+                          "type": "button",
+                          "props": {
+                            "label": "♥",
+                            "height": 40,
+                            "variant": "ghost"
+                          },
+                          "tap": {
+                            "type": "navigate",
+                            "route": "/wishlist",
+                            "navigation_type": "push"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "tap": {
+                  "type": "navigate",
+                  "route": "/product/details/prod_01",
+                  "navigation_type": "push"
+                }
+              },
+              {
+                "id": "products-grid-41",
+                "type": "gridView",
+                "props": {
+                  "crossAxisCount": 2,
+                  "mainAxisSpacing": 16,
+                  "crossAxisSpacing": 16,
+                  "enableInnerScroll": false,
+                  "data": {
+                    "source": "collection",
+                    "id": "products-grid",
+                    "requestKey": "product-list",
+                    "requestUrl": "/api/v1/public/products?page=0&size=4&collection=featured",
+                    "page": 0,
+                    "size": 4,
+                    "collection": "featured"
+                  }
+                },
+                "itemBuilder": {
+                  "type": "repeat",
+                  "source": "dataContext.requests.product-list.data",
+                  "item": {
+                    "id": "product-template-45",
+                    "type": "card",
+                    "props": {
+                      "elevation": 1,
+                      "borderRadius": 12
+                    },
+                    "child": {
+                      "id": "pt-body-46",
+                      "type": "column",
+                      "props": {
+                        "crossAxis": "start",
+                        "mainAxis": "start",
+                        "gap": 8
+                      },
+                      "children": [
+                        {
+                          "id": "pt-image-42",
+                          "type": "image",
+                          "props": {
+                            "urlPath": "item.image",
+                            "source": "network",
+                            "fit": "cover",
+                            "borderRadius": "md",
+                            "height": 120
+                          }
+                        },
+                        {
+                          "id": "pt-name-43",
+                          "type": "text",
+                          "props": {
+                            "valuePath": "item.name",
+                            "fontSize": 12,
+                            "fontWeight": "bold"
+                          }
+                        },
+                        {
+                          "id": "pt-price-44",
+                          "type": "text",
+                          "props": {
+                            "valuePath": "item.price",
+                            "fontSize": 12,
+                            "color": "#0b78c5"
+                          }
+                        }
+                      ]
+                    },
+                    "tap": {
+                      "type": "navigate",
+                      "route": "/product/details/:productId",
+                      "navigation_type": "push"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

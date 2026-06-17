@@ -1,0 +1,30 @@
+{
+  "path": "/cart",
+  "label": "Cart",
+  "blocks": [
+    {
+      "type": "Section",
+      "props": {
+        "content": [
+          {
+            "type": "CartSection",
+            "props": { "showCouponInput": "on", "showRemoveButton": "on" }
+          },
+          {
+            "type": "CartSummary",
+            "props": { "showShippingEstimate": "on", "showTaxEstimate": "on" }
+          },
+          {
+            "type": "Button",
+            "props": {
+              "label": "Proceed to Checkout",
+              "labelAr": "إتمام الطلب",
+              "variant": "primary",
+              "href": "/checkout"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

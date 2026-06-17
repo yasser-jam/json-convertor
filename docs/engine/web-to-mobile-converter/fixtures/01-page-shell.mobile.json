@@ -1,0 +1,65 @@
+{
+  "fullEnvelope": true,
+  "schemaVersion": "1.0",
+  "app": {
+    "name": "SOOQ Merchant Mobile",
+    "bundleId": "com.sooq.merchant.mobile",
+    "apiBaseUrl": "https://sooq.up.railway.app",
+    "tenantId": "00000000-0000-0000-0000-000000000000",
+    "tenantSlug": "example-merchant"
+  },
+  "theme": {
+    "mode": "light",
+    "colors": {
+      "primary": "#0b78c5",
+      "surface": "#f6f8fc",
+      "background": "#F1F5F9",
+      "text": "#14243f",
+      "muted": "#6b7d93",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626"
+    },
+    "typography": {
+      "fontFamily": "Tajawal",
+      "scale": { "xs": 12, "sm": 14, "md": 16, "lg": 18, "xl": 22, "xxl": 28, "display": 36 },
+      "weights": { "normal": 400, "medium": 500, "bold": 700 },
+      "lineHeight": { "tight": 1.25, "normal": 1.5, "relaxed": 1.75 }
+    },
+    "radius": { "none": 0, "sm": 8, "md": 12, "lg": 18, "xl": 24, "full": 9999 },
+    "spacing": { "xs": 4, "sm": 10, "md": 16, "lg": 24, "xl": 36 },
+    "buttons": {
+      "sm": { "height": 36, "padX": 14, "fontSize": 14, "radius": 10 },
+      "md": { "height": 48, "padX": 18, "fontSize": 16, "radius": 12 },
+      "lg": { "height": 56, "padX": 26, "fontSize": 16, "radius": 14 }
+    }
+  },
+  "navigation": {
+    "type": "tabs",
+    "initialRoute": "/splash",
+    "shellExcludeRoutes": ["/splash", "/auth/login", "/profile"],
+    "tabs": [
+      { "id": "tab-home", "label": "الرئيسية", "icon": "home", "route": "/home" },
+      { "id": "tab-cart", "label": "السلة", "icon": "shopping_cart", "route": "/cart" },
+      { "id": "tab-profile", "label": "حسابي", "icon": "person", "route": "/profile" }
+    ]
+  },
+  "pages": [
+    {
+      "id": "page-profile",
+      "route": "/profile",
+      "title": "User Profile",
+      "background": "#FFFFFF",
+      "scroll": "vertical",
+      "appBar": {
+        "id": "profile-app-bar",
+        "type": "appBar",
+        "props": {
+          "title": "User Profile",
+          "showBackButton": true
+        }
+      },
+      "body": []
+    }
+  ]
+}

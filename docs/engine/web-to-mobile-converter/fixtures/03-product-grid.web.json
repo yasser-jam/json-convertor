@@ -1,0 +1,9 @@
+{
+  "type": "ProductGrid",
+  "props": {
+    "collection": "all",
+    "maxProducts": "6",
+    "columns": "2",
+    "gap": 24
+  }
+}

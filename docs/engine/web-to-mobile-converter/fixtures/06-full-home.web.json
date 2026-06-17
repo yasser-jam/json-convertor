@@ -1,0 +1,49 @@
+{
+  "path": "/home",
+  "label": "Home",
+  "rootProps": {
+    "direction": "rtl",
+    "language": "ar",
+    "primary": "#0b78c5",
+    "headerBrandTitle": "SOOQ"
+  },
+  "blocks": [
+    {
+      "type": "Section",
+      "props": {
+        "backgroundColor": "#F9FAFB",
+        "paddingTop": "32px",
+        "paddingBottom": "32px",
+        "content": [
+          {
+            "type": "Flex",
+            "props": {
+              "direction": "row",
+              "alignItems": "center",
+              "gap": 16,
+              "items": [
+                {
+                  "type": "Button",
+                  "props": {
+                    "text": "Shop Now",
+                    "labelAr": "تسوق الآن",
+                    "variant": "primary",
+                    "href": "/products"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "type": "ProductGrid",
+            "props": {
+              "collection": "all",
+              "columns": "2",
+              "gap": 24
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

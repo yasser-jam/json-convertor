@@ -1,0 +1,33 @@
+{
+  "fragment": "body",
+  "nodes": [
+    {
+      "id": "section-container-1",
+      "type": "container",
+      "style": {
+        "color": "#F9FAFB",
+        "padding": { "top": 32, "bottom": 32, "left": 16, "right": 16 }
+      },
+      "child": {
+        "id": "section-column-2",
+        "type": "column",
+        "props": { "crossAxis": "stretch", "mainAxis": "start", "gap": 16 },
+        "children": [
+          {
+            "id": "flex-row-3",
+            "type": "row",
+            "props": { "mainAxis": "start", "crossAxis": "center", "gap": 16 },
+            "children": [
+              {
+                "id": "button-shop-4",
+                "type": "button",
+                "props": { "label": "Shop Now", "height": 48, "variant": "primary" },
+                "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "fragment": "singleNode",
+  "node": {
+    "id": "hero-stack-1",
+    "type": "stack",
+    "children": [
+      {
+        "id": "hero-bg-image-2",
+        "type": "image",
+        "props": {
+          "source": "network",
+          "url": "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1200",
+          "fit": "cover",
+          "aspectRatio": 1.2
+        }
+      },
+      {
+        "id": "hero-content-col-3",
+        "type": "container",
+        "props": { "stackLayer": "align", "stackAlign": "center" },
+        "child": {
+          "id": "hero-inner-col-4",
+          "type": "column",
+          "props": { "crossAxis": "center", "mainAxis": "center", "gap": 16 },
+          "children": [
+            {
+              "id": "hero-title-5",
+              "type": "text",
+              "props": {
+                "value": "Summer Collection 2026",
+                "fontSize": 28,
+                "fontWeight": "bold",
+                "textAlign": "center",
+                "color": "#FFFFFF"
+              }
+            },
+            {
+              "id": "hero-desc-6",
+              "type": "text",
+              "props": {
+                "value": "Discover lightweight styles crafted for warm days.",
+                "fontSize": 16,
+                "textAlign": "center",
+                "color": "#FFFFFF"
+              }
+            },
+            {
+              "id": "hero-btn-7",
+              "type": "button",
+              "props": { "label": "تسوق الآن", "variant": "primary", "height": 48 },
+              "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

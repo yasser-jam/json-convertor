@@ -1,0 +1,10 @@
+{
+  "path": "/profile",
+  "label": "User Profile",
+  "rootProps": {
+    "direction": "rtl",
+    "language": "ar",
+    "primary": "#0b78c5"
+  },
+  "blocks": []
+}
