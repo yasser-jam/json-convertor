@@ -1,6 +1,81 @@
 # 07 — Shared Fields
 
-Maps web shared field helpers ([docs/blocks.md §6](../../BLOCKS.md)) to mobile node props and `tap` actions.
+Maps web shared field helpers ([docs/BLOCKS.md](../../BLOCKS.md) Shared Concepts) to mobile node props and `tap` actions.
+
+---
+
+## ProductPickerRef
+
+Used by `ProductCard`, `ProductImage`, `ProductInfo`:
+
+```json
+{ "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt" }
+```
+
+| Web | Mobile |
+|-----|--------|
+| `id` | route param `:productId`, `cubitCall` params |
+| `titleAr` / `titleEn` | static fallback `text.value` when API not loaded |
+| embedded `price` etc. | **Ignore** — not part of picker ref; use API |
+
+---
+
+## CollectionPickerRef
+
+Used by `ProductsGrid`:
+
+```json
+{ "id": "coll_featured", "name": "Featured", "productCount": 24 }
+```
+
+| Web | Mobile |
+|-----|--------|
+| `id` | `data.collection`, query filter on `requestUrl` |
+| `name` | documentation / warning context only |
+| `productCount` | default `data.size` cap when `maxRows` is `"0"` |
+| legacy string `"featured"` | normalize to `{ "id": "featured" }` |
+
+---
+
+## Resource metadata (read-only)
+
+Auto-populated in `store_config.json` when product/collection is selected.
+
+### ProductCard — `ProductResourceMetadata`
+
+```json
+{
+  "type": "product",
+  "method": "get",
+  "id": "prod_01",
+  "apiUrl": "https://api.example.com/admin/products/prod_01?include=PRICING&include=IMAGES&include=INVENTORY"
+}
+```
+
+| Web | Mobile |
+|-----|--------|
+| `metadata.apiUrl` | rewrite to relative path under `app.apiBaseUrl` for optional prefetch |
+| `metadata.id` | must match `product.id` |
+
+### ProductsGrid — `ProductsGridResourceMetadata`
+
+```json
+{
+  "type": "collection",
+  "method": "get",
+  "collectionId": "coll_featured",
+  "productCount": 24,
+  "apiUrl": "https://api.example.com/admin/collections/coll_featured/products?page=0&size=100"
+}
+```
+
+| Web | Mobile |
+|-----|--------|
+| `metadata.apiUrl` | **Primary** source for `gridView.props.data.requestUrl` |
+| `metadata.collectionId` | must match `collection.id` |
+| `metadata.productCount` | informs `data.size` when `maxRows` unset |
+
+**Rule:** Never embed full product payloads in mobile JSON — bind at render time via `data` + `valuePath`.
 
 ---
 
@@ -59,17 +134,20 @@ Web block typography (theme/fixed mode):
 
 ---
 
-## Link object
+## Link object (LinkValue)
 
-Used by Button and Link blocks.
+Used by `Button`, `ContentButton`, `NavMenu`, shell blocks, drawers.
 
 | Web sub-field | Mobile |
 |---------------|--------|
 | `kind: "page"` + `pageId` | `tap.navigate.route` after [05-navigation-and-routes.md](05-navigation-and-routes.md) |
 | `kind: "url"` + `url` | External: `tap.type: "openUrl"`, `url`; in-app path: `navigate` |
-| `newWindow: "on"` / `true` | `openUrl` (mobile always external browser) |
+| `kind: "anchor"` + `hash` | **Gap:** map to route with fragment or omit |
+| `kind: "none"` | omit `tap` |
+| `target: "_blank"` | `openUrl` |
+| legacy `href` string | `navigate` when path-like, else `openUrl` |
 
-**Precedence:** If both `href` and `link` set, prefer `link` object.
+**Precedence:** `link` object > `href` > `buttonAction` defaults.
 
 ---
 
@@ -126,9 +204,23 @@ Mobile `videoPlayer` may not support all YouTube embed policies — **fallback:*
 
 ---
 
+## Theme tokens
+
+Many fields accept `"theme-*"` tokens — resolve at convert time to px/hex from `root.props` + theme scales.
+
+| Token family | Examples | Mobile |
+|--------------|----------|--------|
+| Color | `theme-primary`, `theme-text`, `theme-neutral` | `theme.colors.*` |
+| Font size | `theme-sm` … `theme-xl` | numeric `fontSize` |
+| Font weight | `theme-light`, `theme-bold` | `fontWeight` |
+| Radius | `theme-sm`, `theme-md`, `theme-none`, `theme-full` | `borderRadius` px (`theme-none` → `0`) |
+| Space | `theme-8`, `theme-16`, `theme-24`, `theme-40` | padding/gap px |
+
+---
+
 ## Rich text (TipTap HTML)
 
-Policy for `Heading`, `Text`, `Hero.description`, `Card.description`:
+Policy for `Heading`, `Text`, `ContentParagraph`, `Hero.description`, `Card.description`, `RichText`:
 
 1. Strip scripts and unsafe tags
 2. If only `<p>`, `<strong>`, `<em>`, `<a>` → `richtext` with simplified spans

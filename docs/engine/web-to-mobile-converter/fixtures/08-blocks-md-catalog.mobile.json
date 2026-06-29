@@ -179,10 +179,24 @@
                 "id": "text-4",
                 "type": "text",
                 "props": {
-                  "value": "نص تجريبي",
+                  "value": "نص تجريبي من BLOCKS.md",
                   "fontSize": 14,
                   "textAlign": "right",
                   "color": "#6b7d93"
+                }
+              },
+              {
+                "id": "button-shop-4b",
+                "type": "button",
+                "props": {
+                  "label": "تسوق الآن",
+                  "height": 48,
+                  "variant": "primary"
+                },
+                "tap": {
+                  "type": "navigate",
+                  "route": "/products",
+                  "navigation_type": "push"
                 }
               },
               {
@@ -210,14 +224,22 @@
                 }
               },
               {
-                "id": "row-7",
-                "type": "row",
-                "props": {
-                  "mainAxis": "start",
-                  "crossAxis": "center",
-                  "gap": 12
+                "id": "group-wrap-7",
+                "type": "container",
+                "style": {
+                  "color": "#f6f8fc",
+                  "padding": { "top": 8, "bottom": 8, "left": 8, "right": 8 }
                 },
-                "children": [
+                "props": { "borderRadius": 12 },
+                "child": {
+                  "id": "row-7",
+                  "type": "row",
+                  "props": {
+                    "mainAxis": "start",
+                    "crossAxis": "center",
+                    "gap": 12
+                  },
+                  "children": [
                   {
                     "id": "text-8",
                     "type": "text",
@@ -236,17 +258,73 @@
                       "textAlign": "right"
                     }
                   }
-                ]
+                  ]
+                }
               },
               {
-                "id": "gallery-grid-15",
-                "type": "column",
-                "props": {
-                  "crossAxis": "stretch",
-                  "mainAxis": "start",
-                  "gap": 16
+                "id": "accordion-col-7c",
+              "type": "column",
+              "props": {
+                "crossAxis": "stretch",
+                "mainAxis": "start",
+                "gap": 8
+              },
+              "children": [
+                {
+                  "id": "accordion-title-7d",
+                  "type": "text",
+                  "props": {
+                    "value": "الأسئلة الشائعة",
+                    "fontSize": 18,
+                    "fontWeight": "bold",
+                    "textAlign": "right"
+                  }
                 },
-                "children": [
+                {
+                  "id": "accordion-tile-7e",
+                  "type": "expansionTile",
+                  "props": {
+                    "title": "كم يستغرق التوصيل؟",
+                    "initiallyExpanded": true
+                  },
+                  "child": {
+                    "id": "accordion-body-7f",
+                    "type": "text",
+                    "props": {
+                      "value": "2-4 أيام عمل.",
+                      "fontSize": 14,
+                      "textAlign": "right"
+                    }
+                  }
+                },
+                {
+                  "id": "accordion-tile-7g",
+                  "type": "expansionTile",
+                  "props": {
+                    "title": "هل يمكن الإرجاع؟",
+                    "initiallyExpanded": false
+                  },
+                  "child": {
+                    "id": "accordion-body-7h",
+                    "type": "text",
+                    "props": {
+                      "value": "خلال 7 أيام.",
+                      "fontSize": 14,
+                      "textAlign": "right"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "gallery-grid-15",
+              "type": "column",
+              "props": {
+                "crossAxis": "stretch",
+                "mainAxis": "start",
+                "gap": 16
+              },
+              "children": [
                   {
                     "id": "gallery-row-14",
                     "type": "row",
@@ -486,7 +564,7 @@
                       "id": "pc-price-34",
                       "type": "text",
                       "props": {
-                        "value": "120",
+                        "valuePath": "dataContext.requests.product-detail.data.price",
                         "fontSize": 14,
                         "color": "#0b78c5"
                       }
@@ -567,10 +645,10 @@
                     "source": "collection",
                     "id": "products-grid",
                     "requestKey": "product-list",
-                    "requestUrl": "/api/v1/public/products?page=0&size=4&collection=featured",
+                    "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=4",
                     "page": 0,
                     "size": 4,
-                    "collection": "featured"
+                    "collection": "coll_featured"
                   }
                 },
                 "itemBuilder": {

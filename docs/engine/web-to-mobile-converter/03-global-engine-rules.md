@@ -192,3 +192,15 @@ When decomposing commerce/catalog UI, **copy subtree shapes** from [mobile_produ
 ## 11. Validation hook
 
 After conversion, run [16-post-conversion-validation.md](16-post-conversion-validation.md). Debug builds also run `LayoutConstraintValidator` when loading config in app.
+
+---
+
+## 12. Commerce metadata & picker refs
+
+| Rule | Detail |
+|------|--------|
+| G-41 | When `props.metadata.apiUrl` exists on `ProductCard` or `ProductsGrid`, use it as the **primary** source for `requestUrl` (normalize to relative public path) |
+| G-42 | `collection` must be `CollectionPickerRef` object `{ id, name?, productCount? }` — coerce legacy string to `{ id: string }` |
+| G-43 | `product` must be `ProductPickerRef` `{ id, titleAr?, titleEn? }` — ignore extra embedded fields (`price`, images) |
+| G-44 | Do not persist `metadata` as editable mobile props — copy only resolved `requestUrl` / ids into `data` nodes |
+| G-45 | Legacy block types (`Heading`, `Text`, `Button`, …) remain accepted — normalize to `Content*` rules where aliases exist |

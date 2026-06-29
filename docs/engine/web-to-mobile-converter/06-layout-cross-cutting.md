@@ -1,6 +1,6 @@
 # 06 — Layout Cross-Cutting
 
-Maps web `props.layout` ([docs/blocks.md §4](../../BLOCKS.md)) onto mobile `style`, `container`, and `stack`.
+Maps web `props.layout` ([docs/BLOCKS.md](../../BLOCKS.md) Shared Concepts → Layout) onto mobile `style`, `container`, and `stack`.
 
 Every web block may include optional `props.layout` (`LayoutFieldProps`).
 
@@ -8,11 +8,12 @@ Every web block may include optional `props.layout` (`LayoutFieldProps`).
 
 ## Grid spanning
 
-Web layout grid span applies inside web CSS Grid — mobile has no grid-span prop.
+Web layout `spanCol` / `spanRow` apply inside web Section CSS Grid (`columns`, `columnsMobile`).
 
 | Web | Mobile policy |
 |-----|---------------|
-| `spanCol`, `spanRow` | **Ignore** on mobile unless parent is `gridView` (commerce only) |
+| `spanCol`, `spanRow` on child `layout` | **Ignore** on mobile unless parent is commerce `gridView` |
+| Section `columns` / `columnsMobile` | Single-column flow by default — see [blocks/09-layout-blocks.md](blocks/09-layout-blocks.md) |
 | `grow: true` | Child wrapped in `container` with `expand: true` appropriate axis |
 
 ---
@@ -89,8 +90,8 @@ stack
 | `displayMode: block` | Default column/flow |
 | `displayMode: flex` | Already handled by Flex/Group block rules |
 | `displayMode: grid` | Parent `gridView` or column of rows |
-| `hideOnMobile: true` | **Omit node** on mobile (mobile is always "mobile") |
-| `hideOnTablet: true` | Include node (no tablet form factor) |
+| `hideOnMobile: true` | **Omit node** on mobile (mobile is always "mobile" viewport) |
+| `hideOnTablet: true` | Include node (no tablet form factor in mobile app) |
 | `hideOnDesktop: true` | Include node |
 
 ---

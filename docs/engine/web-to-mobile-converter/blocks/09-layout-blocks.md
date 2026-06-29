@@ -8,15 +8,25 @@ Web layout blocks ([docs/blocks.md §5.1](../../BLOCKS.md)) → mobile `containe
 
 **Rule 1.2** — Section → `container` + `column`.
 
+> **Registry:** Primary **layout** block. Nested `Section` inside `Section` is invalid on web — emit a conversion warning and flatten to sibling containers.
+
 ### Web contract
 
 | Prop | Type | Default |
 |------|------|---------|
+| `name` | string | `"New Section"` |
+| `anchorId` | string | `""` |
+| `visible` | boolean | `true` |
 | `content[]` | blocks | — |
-| `paddingTop/Bottom/Horizontal` | px string | `0px` |
+| `paddingTop/Bottom/Horizontal` | px string | `80px` / `80px` / `24px` |
+| `backgroundColor` | hex | `#ffffff` (ignored when `backgroundImage` set) |
+| `backgroundImage` | string URL | `""` |
+| `backgroundOverlayColor` | string (rgba ok) | `""` |
+| `theme` | `light` \| `dark` | `dark` |
 | `maxWidth` | string | `1280px` |
-| `backgroundColor` | hex | inherit |
-| `theme` | `light` \| `dark` | `light` |
+| `columns` | number \| string 1–6 | `1` |
+| `columnsMobile` | number \| string 1–6 | `1` |
+| `gridGap` | string | `24px` |
 
 ### Mobile decomposition
 
@@ -30,12 +40,19 @@ container (background + padding)
 
 | Web | Mobile |
 |-----|--------|
-| `backgroundColor` | `container.style.color` (background fill) |
+| `visible: false` | **Omit** entire section subtree |
+| `backgroundColor` | `container.style.color` (background fill) when no `backgroundImage` |
+| `backgroundImage` | `stack`: full-bleed `image` (cover) + content column on top |
+| `backgroundOverlayColor` | semi-transparent `container` layer between image and content |
 | `paddingTop` | `style.padding.top` |
 | `paddingBottom` | `style.padding.bottom` |
 | `paddingHorizontal` | `style.padding.left` + `style.padding.right` |
-| `theme: dark` | dark bg/text on container + default child text colors |
-| `maxWidth` | **Ignore** on mobile |
+| `theme: dark` / `light` | default child text colors on section column |
+| `maxWidth` | **Ignore** on mobile (full bleed + horizontal padding) |
+| `columns` / `columnsMobile` | **Gap:** mobile is single-column flow; use `columnsMobile` as hint for `gridView` chunking inside section only when all children are homogeneous cards |
+| `gridGap` | `column.props.gap` when multi-column chunking applied |
+| `anchorId` | **Ignore** — no in-page anchor scroll on mobile |
+| `name` | **Ignore** — editor outline label only |
 | `content[]` | `column.children[]` |
 
 **Fix v0 bug:** use `style.color` for **background**, not text color.
@@ -151,7 +168,7 @@ Structural grid — **not** ProductGrid.
 
 ## Group
 
-Same rules as **Flex**; default web direction is `column`.
+Same flex rules as **Flex**; default web direction is `row`. **Legacy** `FlexGroup` / `Div` aliases normalize to `Group`.
 
 | Web alias | Normalized to |
 |-----------|---------------|
@@ -162,10 +179,33 @@ Same rules as **Flex**; default web direction is `column`.
 
 | Prop | Default |
 |------|---------|
-| `direction` | `column` |
-| `content[]` | blocks (Group uses `content`, Flex uses `items`) |
+| `direction` | `row` |
+| `gap` | `16` (0–120 px) |
+| `alignItems` | `stretch` |
+| `justifyContent` | `flex-start` |
+| `wrap` | `nowrap` |
+| `backgroundColor` | `""` (theme token or hex; empty = none) |
+| `backgroundImage` | `""` |
+| `backgroundOverlayColor` | `""` |
+| `padding` | `"0px"` |
+| `borderRadius` | `"theme-none"` |
+| `boxShadow` | `none` \| `sm` \| `md` \| `lg` |
+| `content[]` | blocks (Group uses `content`, Flex uses `items`; **no nested Section**) |
 
 **Normalize:** `content[]` → `children[]` internally.
+
+### Surface styling (Group-only)
+
+When any surface prop is non-default, wrap the flex node in an outer `container`:
+
+| Web | Mobile |
+|-----|--------|
+| `backgroundColor` | `container.style.color` |
+| `backgroundImage` | `stack` with cover `image` + overlay |
+| `backgroundOverlayColor` | overlay `container` rgba |
+| `padding` | `container.style.padding` |
+| `borderRadius` | `container.props.borderRadius` (resolve `theme-none` → `0`) |
+| `boxShadow` sm/md/lg | `container` elevation or card wrapper |
 
 ### Before / after (FlexGroup horizontal)
 

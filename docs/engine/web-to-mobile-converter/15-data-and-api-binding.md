@@ -1,19 +1,50 @@
 # 15 — Data and API Binding
 
-Maps web mock fixtures ([docs/blocks.md §7](../../BLOCKS.md)) to mobile live API bindings.
+Maps web `store_config.json` bindings ([docs/BLOCKS.md](../../BLOCKS.md) Shared Concepts) to mobile live API bindings.
 
 ---
 
 ## Web fixture vs mobile API
 
-| Web (demo) | Mobile (production) |
-|------------|---------------------|
-| `prod-001` product id | `item.id` from `/api/v1/public/products` |
-| `product.title` | `item.name` |
-| `product.image` | `item.image` or `item.primaryImageUrl` |
-| `product.price` (USD number) | `item.price` (formatted by engine) |
+| Web (demo / picker) | Mobile (production) |
+|---------------------|---------------------|
+| `product.id` from `ProductPickerRef` | `item.id` from list API |
+| `product.titleAr` | static fallback; live `item.name` |
+| `metadata.apiUrl` on ProductCard / ProductsGrid | **Primary** `requestUrl` source |
 | `MockCartLine` | `cart.items` via CartCubit |
 | `sampleOrders` | `/api/v1/customer/orders` |
+
+---
+
+## Resource metadata → requestUrl
+
+When `props.metadata.apiUrl` is present, normalize it for mobile:
+
+1. Parse URL path + query from `metadata.apiUrl` (may be absolute admin host).
+2. Strip host; keep path starting with `/api/...`.
+3. Rewrite admin paths to public mobile paths when needed:
+   - `/admin/products/:id` → `/api/v1/public/products/:id`
+   - `/admin/collections/:id/products` → `/api/v1/public/collections/:id/products`
+4. Set `props.data.requestUrl` to relative path; `app.apiBaseUrl` supplies host.
+
+| Metadata type | `requestKey` suggestion |
+|---------------|-------------------------|
+| `product` | `product-detail` (prefetch) or omit on card — navigate only |
+| `collection` | `product-list` |
+
+**Never** embed product arrays in mobile JSON.
+
+---
+
+## CollectionPickerRef binding
+
+| Web | Mobile `data` |
+|-----|---------------|
+| `collection: { id: "coll_featured" }` | `collection: "coll_featured"` |
+| `metadata.apiUrl` | `requestUrl` (normalized) |
+| `metadata.productCount` | default `size` when `maxRows` is `"0"` |
+| `maxRows: "2"` + `columns: "2"` | `size: 4` |
+| legacy `collection: "featured"` (string) | `collection: "featured"` + default public list URL |
 
 ---
 
@@ -44,11 +75,11 @@ Detail page (`product-detail` request):
 | Use case | `requestUrl` | `requestKey` |
 |----------|--------------|--------------|
 | Product grid | `/api/v1/public/products?page=0&size=20` | `product-list` |
+| Collection products | from `metadata.apiUrl` or `/api/v1/public/collections/:collectionId/products?page=0&size=20` | `product-list` |
 | Category products | `/api/v1/public/categories/:categorySlug/products?page=0&size=20` | `category-products` |
 | Product detail | `/api/v1/public/products/:productId?include=PRICING,IMAGES,VARIANTS,CATEGORIES,TAGS` | `product-detail` |
 | Search | `/api/v1/public/products/search?q={query}&page=0&size=20` | `search-results` |
 | Categories | `/api/v1/public/categories` | `category-list` |
-| Autocomplete | `/api/v1/public/products/autocomplete?q={query}` | `search-autocomplete` |
 | Payment methods | `/api/v1/public/payments/methods` | `payment-methods` |
 
 **Never use:** `/api/v1/products`, `/api/v1/auth/otp/*`
@@ -62,16 +93,17 @@ Detail page (`product-detail` request):
   "source": "collection",
   "id": "unique-collection-id",
   "requestKey": "product-list",
-  "requestUrl": "/api/v1/public/products?page=0&size=20",
+  "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=8",
   "page": 0,
-  "size": 20
+  "size": 8,
+  "collection": "coll_featured"
 }
 ```
 
 Rules:
 - `requestKey` must match `itemBuilder.source` path segment
 - `id` unique per node on page
-- Pagination: increment `page` on load-more if implemented
+- Prefer `metadata.apiUrl` over guessed URLs
 
 ---
 
@@ -98,18 +130,6 @@ See builder-specs 20–22.
 
 ---
 
-## Web collection filter
-
-Web ProductGrid `collection: "Summer 2025"` → append query or client filter:
-
-**Option A:** `requestUrl` with collection query param if API supports it.
-
-**Option B:** `requestKey: product-list` + filter in cubit (engine must support — **gap**).
-
-Default converter: fetch all products with max `size: maxProducts`.
-
----
-
 ## Route param binding
 
 Navigate tap:
@@ -124,9 +144,8 @@ Navigate tap:
 
 Engine resolves `:productId` from:
 1. `item.id` in repeat context
-2. `routeParams` on detail page load
-
-Web `/products/:product-slug` → use slug as `:productId` if API accepts slug in path.
+2. `ProductPickerRef.id` on static ProductCard
+3. `routeParams` on detail page load
 
 ---
 
@@ -136,6 +155,6 @@ Web `/products/:product-slug` → use slug as `:productId` if API accepts slug i
 |----------|------|
 | `/api/v1/public/*` | Tenant header only |
 | `/api/v1/customer/orders` | Bearer token |
-| `/api/v1/customer/auth/otp/*` | Public OTP endpoints |
+| Wishlist endpoints | Bearer token |
 
 Converted taps to my-orders: `requireAuth: true`.

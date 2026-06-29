@@ -1,8 +1,27 @@
 # 17 — BLOCKS.md Gap Analysis
 
-Structured comparison of [docs/BLOCKS.md](../../BLOCKS.md) (web Puck catalog) vs mobile conversion rules and [lib/transformer.ts](../../../lib/transformer.ts).
+Structured comparison of [docs/BLOCKS.md](../../BLOCKS.md) (web Puck catalog, v2026-06) vs mobile conversion rules and [lib/transformer.ts](../../../lib/transformer.ts).
 
 Status legend: **full** = converts with documented mapping; **partial** = decomposes with known gaps; **unsupported** = skipped with warning.
+
+---
+
+## What's new in BLOCKS.md (converter impact)
+
+| Change | Affected blocks | Converter action |
+|--------|-----------------|------------------|
+| **Block registry** groups (layout / blocks / storeBlocks / shell / legacy) | all | Normalize legacy types; prefer `Content*` over `Heading`/`Text` |
+| **`metadata.apiUrl`** on commerce blocks | `ProductCard`, `ProductsGrid` | **G-41** — primary `requestUrl` source ([15-data-and-api-binding.md](15-data-and-api-binding.md)) |
+| **`CollectionPickerRef`** object | `ProductsGrid` | Replace string `collection: "featured"` with `{ id, name?, productCount? }` |
+| **`ProductPickerRef`** shape | `ProductCard`, `ProductImage`, `ProductInfo` | Use `id` + optional titles only; ignore embedded price |
+| **Section** `backgroundImage`, `backgroundOverlayColor`, `columns`, `columnsMobile` | `Section` | Stack decomposition; multi-column **partial** |
+| **Group** surface props | `Group` | Card-like wrapper when bg/shadow set |
+| **SiteHeader** block props | `SiteHeader` | `layoutMode`, `menuAlign`, `navStyle` documented; ignored on mobile |
+| **ContentHeading** `level` 1–6 | `ContentHeading` | Map to font scale |
+| **Lucide kebab-case** icons | `ContentIcon`, `Card` | Normalize PascalCase legacy values |
+| **`theme-none`** radius token | layout/content | Resolve to `0` |
+| **Layout** `hideOnMobile` etc. documented | all WithLayout | Omit when `hideOnMobile: true` |
+| **`Blank` dev-only** | `Blank` | Skip unless legacy data |
 
 ---
 
@@ -34,97 +53,89 @@ All other BLOCKS.md types use the same PascalCase name in the converter switch.
 | Page shell | `pages[].route`, `title`, `scroll`, `appBar`, `body[]` | [08-page-assembly.md](08-page-assembly.md) | `transformPage` | **full** | `/` → `/home` via `normalizeRoute` |
 | Theme | `theme.colors`, typography, radius, buttons | [04-theme-and-root-mapping.md](04-theme-and-root-mapping.md) | `transformTheme` | **full** | `app.tenantId` injected, not from web |
 | Navigation | Tab shell + `shellExcludeRoutes` | [05-navigation-and-routes.md](05-navigation-and-routes.md) | `transformNavigation` | **partial** | Web has no bottom tabs; mobile adds defaults |
-| Zones / drawer | `appDrawer` from `SiteDrawerShell` | [blocks/13-shell-blocks.md](blocks/13-shell-blocks.md) | partial | **partial** | `zones.shell-left/right` merge documented; limited fixture coverage |
+| Zones / drawer | `appDrawer` from `SiteDrawerShell` | [blocks/13-shell-blocks.md](blocks/13-shell-blocks.md) | partial | **partial** | Block-level drawer props + zones merge |
 | Multi-page batch | Single envelope, merged theme | [08-page-assembly.md](08-page-assembly.md) | array of pages | **partial** | `themeMergeStrategy` undefined |
 
 ---
 
-## 2. Basic sections and items inside
+## 2. Layout blocks (Section, Group, Flex, Grid, Sidebar)
 
-| Web (Section) | Mobile | Spec | Code | Status | Issues |
-|---------------|--------|------|------|--------|--------|
-| `content[]` | `container` → `column` → children | [blocks/09-layout-blocks.md](blocks/09-layout-blocks.md) | `transformSection` | **full** | Default gap 16 |
-| padding, `backgroundColor` | `container.style` | 09-layout-blocks | `transformSection` | **full** | v0 bg bug fixed |
-| `columns`, `gridGap` | — | — | — | **unsupported** | Section multi-column layout not mapped |
-| `maxWidth` | ignored | 09-layout-blocks | — | **partial** | Documented gap |
-| `anchorId` | — | — | — | **unsupported** | No in-page anchors on mobile |
-| `visible: false` | omit block | — | `transformSection` | **full** | Returns null |
-| Nested `Section` | sibling containers | — | warning | **partial** | Emits conversion warning |
-| Child slots `content[]` / `items[]` | internal `children[]` | [01-web-input-schema.md](01-web-input-schema.md) | `getChildren` | **full** | Flex uses `items[]`, Group uses `content[]` |
-
----
-
-## 3. Basic blocks (text, button, image, video)
-
-| BLOCKS.md type | Mobile | Spec | Code | Status | Issues |
-|----------------|--------|------|------|--------|--------|
-| `Text` | `text` / `richtext` | [blocks/10-content-blocks.md](blocks/10-content-blocks.md) | `transformText` | **full** | HTML → richtext |
-| `ContentParagraph` | alias → `Text` | 10-content-blocks | alias | **full** | |
-| `Heading` | `text` | 10-content-blocks | `transformHeading` | **full** | |
-| `ContentHeading` | alias → `Heading` | 10-content-blocks | alias | **full** | |
-| `RichText` | `richtext` | 10-content-blocks | `transformRichText` | **full** | Preserves HTML in `props.richtext` |
-| `Button` | `button` + `tap` | 10-content-blocks | `transformButton` | **full** | LinkValue → navigate |
-| `ContentButton` | alias → `Button` | 10-content-blocks | alias | **full** | |
-| `ContentImage` | alias → `image` | 10-content-blocks | alias | **full** | `src` → `url`; theme `radius` resolved |
-| `VideoEmbed` | alias → `videoPlayer` | 10-content-blocks | alias | **full** | `src` YouTube URL; `size` theme token → height |
-| `Space` | `sizedBox` | 10-content-blocks | `transformSpace` | **full** | |
-| `ContentDivider` | alias → `divider` | 10-content-blocks | alias | **full** | |
-| `ContentIcon` | alias → `icon` | 10-content-blocks | alias | **full** | Lucide → Material |
-| `ContentHtml` | alias → stripped `text` | [blocks/14-utility-blocks.md](blocks/14-utility-blocks.md) | alias | **partial** | HTML stripped, not richtext |
-
-**Prop-level notes:**
-
-- Theme tokens (`theme-sm`, `theme-md`, `theme-neutral`, etc.) resolved via `resolveThemePx` / `resolveThemeColor` ([07-shared-fields.md](07-shared-fields.md)).
-- YouTube embed may fall back to `openUrl` on device policy failures (documented gap).
-- Legacy types `Image`, `Video`, `YouTube`, `Link`, `Badge` still accepted for fixtures.
+| Web | Mobile | Spec | Code | Status | Issues |
+|-----|--------|------|------|--------|--------|
+| Section `content[]` | `container` → `column` | [blocks/09-layout-blocks.md](blocks/09-layout-blocks.md) | `transformSection` | **full** | Default gap 16 |
+| Section `backgroundImage` + overlay | `stack` + cover image | 09-layout-blocks | partial | **partial** | Overlay rgba approximation |
+| Section `columns` / `columnsMobile` | single column default | 09-layout-blocks | — | **partial** | No CSS grid on mobile |
+| Section `visible: false` | omit block | — | `transformSection` | **full** | |
+| Group surface props | outer `container` / `card` | 09-layout-blocks | partial | **partial** | New in BLOCKS.md |
+| `Flex` / `Grid` | `row`/`column` / row chunks | 09-layout-blocks | existing | **full** | Legacy types |
+| `Sidebar` | — | — | — | **unsupported** | Use routes / filters page |
 
 ---
 
-## 4. Group block and nested elements
+## 3. Content blocks
 
-| BLOCKS.md type | Mobile | Spec | Code | Status | Issues |
-|----------------|--------|------|------|--------|--------|
-| `Group` | `row` / `column` | [blocks/09-layout-blocks.md](blocks/09-layout-blocks.md) | `transformGroup` | **full** | `FlexGroup`, `Div` aliases |
-| `Flex` | `row` / `column` | 09-layout-blocks | `transformFlex` | **full** | `items[]` slot |
-| `Grid` (layout) | `column` of `row` chunks | 09-layout-blocks | `transformLayoutGrid` | **full** | Not product grid |
-| No `Section` in `Group` | — | BLOCKS.md | — | **partial** | Not validated at ingest |
-| `wrap: wrap` | column-of-rows or horizontal scroll | 09-layout-blocks | partial | **partial** | No native Flutter wrap |
-| `layout` (WithLayout) | `style`, `stack`, `positioned` | [06-layout-cross-cutting.md](06-layout-cross-cutting.md) | `applyLayout` | **partial** | Breakpoint visibility ignored |
+| BLOCKS.md type | Registry | Mobile | Spec | Status | Issues |
+|----------------|----------|--------|------|--------|--------|
+| `ContentHeading` | blocks | `text` | [10-content-blocks.md](blocks/10-content-blocks.md) | **full** | `level` 1–6 |
+| `Heading` | legacy | `text` | 10-content-blocks | **full** | alias |
+| `ContentParagraph` | blocks | `text` / `richtext` | 10-content-blocks | **full** | |
+| `Text` | legacy | `text` | 10-content-blocks | **full** | |
+| `RichText` | legacy | `richtext` | 10-content-blocks | **full** | |
+| `ContentButton` | blocks | `button` + `tap` | 10-content-blocks | **full** | `destinationType` |
+| `Button` | legacy | `button` | 10-content-blocks | **full** | |
+| `ContentImage` | blocks | `image` | 10-content-blocks | **full** | |
+| `VideoEmbed` | blocks | `videoPlayer` | 10-content-blocks | **full** | |
+| `Space` | blocks | `sizedBox` | 10-content-blocks | **full** | |
+| `ContentDivider` | blocks | `divider` | 10-content-blocks | **full** | |
+| `ContentIcon` | blocks/legacy | `icon` | 10-content-blocks | **full** | kebab-case Lucide |
+| `ContentHtml` | legacy | stripped `text` | [14-utility-blocks.md](blocks/14-utility-blocks.md) | **partial** | |
+| `Accordion` | blocks | `expansionTile` column | 10-content-blocks | **full** | |
+| `Hero` | legacy | composite | 10-content-blocks | **partial** | `image.mode: custom` slot |
+| `Card` | legacy | composite + icon | 10-content-blocks | **partial** | |
+| `ImageGallery` | blocks | grid / `imageSlider` | 10-content-blocks | **partial** | slider `slidesPerView` |
+| `Testimonials` | blocks | card grid / list | [12-testimonial-blocks.md](blocks/12-testimonial-blocks.md) | **full** | cms source partial |
+| `ContactForm` | blocks | — | — | **unsupported** | No mobile form template |
+| `Blank` | dev-only | `text` | 10-content-blocks | **full** | Rare |
 
 ---
 
-## 5. Complex blocks (ImageGallery, Testimonials)
+## 4. Commerce blocks (storeBlocks)
 
-| BLOCKS.md type | Mobile decomposition | Spec | Code | Status | Issues |
-|----------------|---------------------|------|------|--------|--------|
-| `ImageGallery` `mode: grid` | `column` of `row` groups with `image` nodes | this doc | `transformImageGallery` | **full** | Static images only; `gridRows` caps count |
-| `ImageGallery` `mode: slider` | `imageSlider` | this doc | `transformImageGallery` | **partial** | `slidesPerView` not mapped |
-| `Testimonials` inline | `column` of card rows or horizontal `listView` | [blocks/12-testimonial-blocks.md](blocks/12-testimonial-blocks.md) | `transformTestimonials` | **full** | Uses `inlineItems[]` |
-| `Testimonials` `source: cms` | static fallback | 12-testimonial-blocks | warning | **partial** | No testimonial API |
-| `Testimonials` carousel | horizontal `listView` | 12-testimonial-blocks | `transformTestimonials` | **partial** | No autoplay carousel |
-| `TestimonialCard` / `TestimonialGrid` | legacy fixture types | 12-testimonial-blocks | existing | **full** | Superseded by `Testimonials` in BLOCKS.md |
-| `Accordion` | `column` of `expansionTile` | — | `transformAccordion` | **full** | |
-| `Hero`, `Card`, `Stats`, `Logos` | composite / partial | 10-content-blocks | Hero/Card only | **partial** | `Stats`, `Logos` not in BLOCKS.md converter rules |
+| BLOCKS.md type | Mobile | Spec | Status | Issues |
+|----------------|--------|------|--------|--------|
+| `ProductCard` + `metadata` | `card` + API | [11-commerce-blocks.md](blocks/11-commerce-blocks.md) | **full** | Use `metadata.apiUrl` |
+| `ProductsGrid` + `metadata` | `gridView` + `data` | 11-commerce-blocks | **full** | `CollectionPickerRef` |
+| `ProductImage` | `image` | 11-commerce-blocks | **partial** | Legacy |
+| `ProductInfo` | `column` | 11-commerce-blocks | **full** | Legacy |
+| `CartSection` | `listView` | 11-commerce-blocks | **full** | `layoutStyle`, `gap` |
+| `CheckoutForm` | multi-route | 11-commerce-blocks | **partial** | `showDataHints` ignored |
+| `OrderHistory` | `listView` + API | 11-commerce-blocks | **full** | `limit`, `statusFilter` |
+| `Wishlist` | `gridView` + API | 11-commerce-blocks | **partial** | Auth required |
+| `CategoryListMenu` | navigate `/categories` | 11-commerce-blocks | **unsupported** | |
+| `ProductSearchMenu` | navigate `/search` | 11-commerce-blocks | **unsupported** | |
 
 ---
 
-## 6. Bound blocks (ProductCard, ProductsGrid)
+## 5. Shell blocks
 
-| BLOCKS.md type | Mobile | Spec | Code | Status | Issues |
-|----------------|--------|------|------|--------|--------|
-| `ProductCard` | `card` composite + `tap` | [blocks/11-commerce-blocks.md](blocks/11-commerce-blocks.md) | `transformProductCard` | **full** | `product.id` → detail route; action buttons |
-| `ProductCard` variants | vertical / horizontal / compact / featured | 11-commerce-blocks | `transformProductCard` | **full** | Layout differs per variant |
-| `ProductCard` `showVariants` | — | — | — | **partial** | Variants on PDP only, not card |
-| `ProductsGrid` | alias → `gridView` + API `data` | 11-commerce-blocks | `transformProductGrid` | **full** | |
-| `collection` filter | `requestUrl` query param | [15-data-and-api-binding.md](15-data-and-api-binding.md) | `buildCollectionRequestUrl` | **full** | `&collection=` appended |
-| `maxRows` | `data.size` cap | 11-commerce-blocks | `transformProductGrid` | **full** | Maps from `maxRows` or `maxProducts` |
-| `gap` sm/md/lg | numeric spacing | 11-commerce-blocks | `resolveGridGap` | **full** | |
-| `cardVariant` | item template layout | 11-commerce-blocks | `buildProductGridItemTemplate` | **full** | |
-| `ProductImage` | `image` | 11-commerce-blocks | `transformProductImage` | **partial** | Static picker vs API paths in grids |
-| `ProductInfo` | `column` of `text` | — | `transformProductInfo` | **full** | Decomposed from product picker |
-| `Wishlist` | `gridView` + wishlist API | — | `transformWishlist` | **partial** | Auth required at runtime |
-| `OrderHistory` | alias → `OrderList` | 11-commerce-blocks | alias | **full** | |
-| `CartSection`, `CheckoutForm` | listView / multi-route wizard | 11-commerce-blocks | existing | **partial** | Checkout splits across routes |
+| BLOCKS.md type | Mobile | Spec | Status | Issues |
+|----------------|--------|------|--------|--------|
+| `SiteHeader` (block props) | `appBar` | [13-shell-blocks.md](blocks/13-shell-blocks.md) | **full** | Nav style ignored |
+| `SiteFooter` (block props) | footer `column` | 13-shell-blocks | **full** | Per-page footer |
+| `SiteDrawerShell` (block props) | `appDrawer` | 13-shell-blocks | **partial** | `openOnEdgeHover` ignored |
+| `SideDrawer` | legacy | — | **unsupported** | Use `SiteDrawerShell` |
+| `NavMenu` | legacy | — | **unsupported** | Tabs / drawer |
+
+---
+
+## 6. Legacy decompose-only
+
+| BLOCKS.md type | Mobile strategy | Status |
+|----------------|-----------------|--------|
+| `Logos` | `row` of `image` | **partial** (warning + manual) |
+| `Stats` | `row` of stat `text` pairs | **partial** (warning + manual) |
+| `Template` | skip | **unsupported** |
+| `Flex`, `Grid` | layout rules | **full** (legacy) |
 
 ---
 
@@ -139,58 +150,56 @@ All other BLOCKS.md types use the same PascalCase name in the converter switch.
 | `ProductSearchMenu` | Use `/search` route |
 | `ContactForm` | No mobile form template yet |
 | `Template` | Editor-only placeholder |
-| `Logos` | Logo strip; decompose manually to `row` of `image` |
-| `Stats` | Stat strip; decompose to `row` of `text` |
 
 ---
 
 ## Full BLOCKS.md catalog (43 blocks)
 
-| Block | Status |
-|-------|--------|
-| Accordion | full |
-| Blank | full |
-| Button | full |
-| Card | full |
-| CartSection | full |
-| CategoryListMenu | unsupported |
-| CheckoutForm | partial |
-| ContactForm | unsupported |
-| ContentButton | full (alias) |
-| ContentDivider | full (alias) |
-| ContentHeading | full (alias) |
-| ContentHtml | partial (alias) |
-| ContentIcon | full (alias) |
-| ContentImage | full (alias) |
-| ContentParagraph | full (alias) |
-| Flex | full |
-| Grid | full |
-| Group | full |
-| Heading | full |
-| Hero | full |
-| ImageGallery | full |
-| Logos | unsupported |
-| NavMenu | unsupported |
-| OrderHistory | full (alias) |
-| ProductCard | full |
-| ProductImage | partial |
-| ProductInfo | full |
-| ProductSearchMenu | unsupported |
-| ProductsGrid | full (alias) |
-| RichText | full |
-| Section | full |
-| Sidebar | unsupported |
-| SideDrawer | unsupported |
-| SiteDrawerShell | partial (shell) |
-| SiteFooter | full (shell) |
-| SiteHeader | full (shell) |
-| Space | full |
-| Stats | unsupported |
-| Template | unsupported |
-| Testimonials | full |
-| Text | full |
-| VideoEmbed | full (alias) |
-| Wishlist | partial |
+| Block | Registry | Status |
+|-------|----------|--------|
+| Accordion | blocks | full |
+| Blank | dev-only | full |
+| Button | legacy | full |
+| Card | legacy | partial |
+| CartSection | storeBlocks | full |
+| CategoryListMenu | storeBlocks | unsupported |
+| CheckoutForm | storeBlocks | partial |
+| ContactForm | blocks | unsupported |
+| ContentButton | blocks | full |
+| ContentDivider | blocks | full |
+| ContentHeading | blocks | full |
+| ContentHtml | legacy | partial |
+| ContentIcon | blocks/legacy | full |
+| ContentImage | blocks | full |
+| ContentParagraph | blocks | full |
+| Flex | legacy | full |
+| Grid | legacy | full |
+| Group | layout | full |
+| Heading | legacy | full |
+| Hero | legacy | partial |
+| ImageGallery | blocks | partial |
+| Logos | legacy | partial |
+| NavMenu | legacy | unsupported |
+| OrderHistory | storeBlocks | full |
+| ProductCard | storeBlocks | full |
+| ProductImage | legacy | partial |
+| ProductInfo | legacy | full |
+| ProductSearchMenu | storeBlocks | unsupported |
+| ProductsGrid | storeBlocks | full |
+| RichText | legacy | full |
+| Section | layout | full |
+| Sidebar | layout | unsupported |
+| SideDrawer | legacy | unsupported |
+| SiteDrawerShell | shell | partial |
+| SiteFooter | shell | full |
+| SiteHeader | shell | full |
+| Space | blocks | full |
+| Stats | legacy | partial |
+| Template | legacy | unsupported |
+| Testimonials | blocks | full |
+| Text | legacy | full |
+| VideoEmbed | blocks | full |
+| Wishlist | storeBlocks | partial |
 
 ---
 

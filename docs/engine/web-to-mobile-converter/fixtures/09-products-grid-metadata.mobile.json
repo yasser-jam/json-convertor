@@ -1,0 +1,79 @@
+{
+  "fragment": "singleNode",
+  "node": {
+    "id": "products-grid-1",
+    "type": "gridView",
+    "props": {
+      "crossAxisCount": 2,
+      "mainAxisSpacing": 16,
+      "crossAxisSpacing": 16,
+      "childAspectRatio": 0.68,
+      "enableInnerScroll": false,
+      "data": {
+        "source": "collection",
+        "id": "products-grid",
+        "requestKey": "product-list",
+        "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=4",
+        "page": 0,
+        "size": 4,
+        "collection": "coll_featured"
+      },
+      "emptyMessage": "لا توجد منتجات",
+      "errorMessage": "تعذر تحميل المنتجات"
+    },
+    "itemBuilder": {
+      "type": "repeat",
+      "source": "dataContext.requests.product-list.data",
+      "item": {
+        "id": "products-grid-item-2",
+        "type": "card",
+        "props": { "color": "#FFFFFF", "borderRadius": 12, "elevation": 1 },
+        "child": {
+          "id": "products-grid-item-col-3",
+          "type": "column",
+          "props": { "crossAxis": "stretch", "gap": 8 },
+          "children": [
+            {
+              "id": "products-grid-item-image-4",
+              "type": "image",
+              "props": {
+                "source": "network",
+                "urlPath": "item.image",
+                "aspectRatio": 1,
+                "fit": "cover",
+                "borderRadius": 12,
+                "height": 120
+              }
+            },
+            {
+              "id": "products-grid-item-name-5",
+              "type": "text",
+              "props": {
+                "valuePath": "item.name",
+                "fontSize": 12,
+                "fontWeight": "bold",
+                "textAlign": "right",
+                "maxLines": 2
+              }
+            },
+            {
+              "id": "products-grid-item-price-6",
+              "type": "text",
+              "props": {
+                "valuePath": "item.price",
+                "fontSize": 12,
+                "textAlign": "right",
+                "color": "#0b78c5"
+              }
+            }
+          ]
+        },
+        "tap": {
+          "type": "navigate",
+          "route": "/product/details/:productId",
+          "navigation_type": "push"
+        }
+      }
+    }
+  }
+}

@@ -38,7 +38,7 @@ See [17-blocks-gap-analysis.md](../17-blocks-gap-analysis.md) for full BLOCKS.md
 | Web type | Mobile target | Spec |
 |----------|---------------|------|
 | `ProductCard`, `ProductInfo` | `card` / `column` composite | [11-commerce-blocks.md](../blocks/11-commerce-blocks.md) |
-| `ProductsGrid` (`ProductGrid` legacy) | `gridView` + API `data` | 11-commerce-blocks.md |
+| `ProductsGrid` (`ProductGrid` legacy) | `gridView` + API `data` from `metadata.apiUrl` | 11-commerce-blocks.md |
 | `ProductCarousel`, `CartSection`, `CheckoutForm`, … | see commerce spec | 11-commerce-blocks.md |
 | `OrderHistory` (`OrderList` legacy) | `listView` + API | 11-commerce-blocks.md |
 | `Wishlist` | `gridView` + wishlist API | 17-blocks-gap-analysis.md |
@@ -82,7 +82,8 @@ See [17-blocks-gap-analysis.md](../17-blocks-gap-analysis.md) for full BLOCKS.md
 | 05 | [cart-checkout.web.json](05-cart-checkout.web.json) | [cart-checkout.mobile.json](05-cart-checkout.mobile.json) | CartSection, CheckoutForm, cubitCall |
 | 06 | [full-home.web.json](06-full-home.web.json) | [full-home.mobile.json](06-full-home.mobile.json) | Composite home page |
 | 07 | [mega-full-page.web.json](07-mega-full-page.web.json) | [mega-full-page.mobile.json](07-mega-full-page.mobile.json) | Mega demo with BLOCKS.md types |
-| 08 | [blocks-md-catalog.web.json](08-blocks-md-catalog.web.json) | [blocks-md-catalog.mobile.json](08-blocks-md-catalog.mobile.json) | **BLOCKS.md catalog sample** — Content*, VideoEmbed, ProductsGrid, Testimonials, ImageGallery |
+| 08 | [blocks-md-catalog.web.json](08-blocks-md-catalog.web.json) | [blocks-md-catalog.mobile.json](08-blocks-md-catalog.mobile.json) | **BLOCKS.md v2026-06** — Content*, Accordion, Group surface, `metadata.apiUrl`, `CollectionPickerRef` |
+| 09 | [products-grid-metadata.web.json](09-products-grid-metadata.web.json) | [products-grid-metadata.mobile.json](09-products-grid-metadata.mobile.json) | `ProductsGrid` with `CollectionPickerRef` + `metadata` only |
 
 ---
 
@@ -101,3 +102,5 @@ See [17-blocks-gap-analysis.md](../17-blocks-gap-analysis.md) for full BLOCKS.md
 - Fixture mobile files are **reference fragments** unless marked `fullEnvelope: true`.
 - The converter produces `fullEnvelope` output when input contains `rootProps`.
 - Type aliases (`ContentImage` → `Image`, `ProductsGrid` → `ProductGrid`, etc.) are applied in [lib/transformer.ts](../../../lib/transformer.ts).
+- `ProductsGrid.collection` is now a `CollectionPickerRef` object — legacy string values are coerced at ingest.
+- `metadata.apiUrl` on `ProductCard` / `ProductsGrid` is the preferred source for mobile `requestUrl`.

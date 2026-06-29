@@ -3,7 +3,15 @@
 Each block is described with its **properties**, accepted **values**, and a ready-to-use **JSON example** (the exact shape stored in `store_config.json`).
 
 > **Common note — `layout`**  
-> Most blocks wrap their props with a `WithLayout` higher-order type that adds a shared `layout` object. The `layout` prop controls advanced positioning (padding, shadow, sticky, float, visibility per breakpoint). It is omitted from the examples below for brevity; add it only when you need non-default positioning.
+> Most blocks wrap their props with a `WithLayout` higher-order type that adds a shared `layout` object. The `layout` prop controls advanced positioning (padding, shadow, float, per-breakpoint visibility via `hideOnMobile` / `hideOnTablet` / `hideOnDesktop`, etc.). It is omitted from the examples below for brevity; add it only when you need non-default positioning.
+
+> **Block registry**  
+> Blocks registered in the editor are grouped as: **layout** (`Section`, `Group`, `Sidebar`), **blocks** (content primitives), **storeBlocks** (commerce/customer), **shell** (`SiteHeader`, `SiteDrawerShell`, `SiteFooter`), and **legacy** (hidden from the picker but still rendered from old `store_config.json`). `Blank` exists in code only and is **not** registered — it will not appear in published store config.
+>
+> **Legacy blocks** (still in `store_config.json`, hidden from picker): `SideDrawer`, `Heading`, `Text`, `RichText`, `Button`, `Card`, `Grid`, `Flex`, `Hero`, `Logos`, `Stats`, `Template`, `NavMenu`, `ContentIcon`, `ContentHtml`, `ProductImage`, `ProductInfo`.
+
+> **Runtime metadata**  
+> `ProductCard` and `ProductsGrid` auto-populate a read-only `metadata` object when a product/collection is selected. Mobile converters should use `metadata.apiUrl` to fetch live data at render time rather than embedding product payloads in JSON.
 
 ---
 
@@ -65,7 +73,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
 | `heading` | `string` | Section heading | `"الأسئلة الشائعة"` |
-| `description` | `string` | Subtitle below heading | `"إجابات مختصرة..."` |
+| `description` | `string` | Subtitle below heading | `"إجابات مختصرة وعملية لتسهّل على الزائر قراءتها بسرعة."` |
 | `variant` | `"soft" \| "outline" \| "minimal"` | Visual style | `"soft"` |
 | `backgroundColor` | `string` | CSS color or empty (use theme) | `""` |
 | `textColor` | `string` | CSS color or empty | `""` |
@@ -86,8 +94,9 @@ Each block is described with its **properties**, accepted **values**, and a read
     "backgroundColor": "",
     "textColor": "",
     "items": [
-      { "title": "كم يستغرق التوصيل؟", "body": "2-4 أيام عمل.", "open": true },
-      { "title": "هل يمكن الدفع عند الاستلام؟", "body": "نعم.", "open": false }
+      { "title": "كم يستغرق التوصيل؟", "body": "معظم الطلبات في سوريا تصل خلال 2-4 أيام عمل حسب المدينة.", "open": true },
+      { "title": "هل يمكن الدفع عند الاستلام؟", "body": "نعم، الدفع عند الاستلام متاح لجميع المناطق المؤهلة.", "open": false },
+      { "title": "هل تقدّمون إرجاعاً للمنتجات؟", "body": "يمكنك طلب الإرجاع خلال 7 أيام للمنتجات غير المستخدمة بحالتها الأصلية.", "open": false }
     ]
   }
 }
@@ -98,7 +107,9 @@ Each block is described with its **properties**, accepted **values**, and a read
 ## Blank
 
 **Label:** Placeholder  
-**Description:** A simple placeholder block used during development or as a fallback.
+**Description:** A simple placeholder block used during development or as a fallback. **Not registered** in the editor config — will not appear in `store_config.json` from merchant stores.
+
+> **Status:** Dev-only. Safe to ignore for mobile conversion unless you encounter legacy data with `"type": "Blank"`.
 
 ### Properties
 
@@ -163,7 +174,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 |---|---|---|---|
 | `title` | `string` | Card title | `"Title"` |
 | `description` | `string` | Card description | `"Description"` |
-| `icon` | `string` | Lucide icon name (e.g. `"Feather"`, `"Star"`) | `"Feather"` |
+| `icon` | `string` *(optional)* | Lucide icon key (lowercase kebab-case, e.g. `"feather"`, `"truck"`) | `"feather"` |
 | `mode` | `"flat" \| "card"` | Visual style | `"flat"` |
 
 ### JSON Example
@@ -174,7 +185,7 @@ Each block is described with its **properties**, accepted **values**, and a read
   "props": {
     "title": "شحن سريع",
     "description": "توصيل خلال يومي عمل لجميع المحافظات.",
-    "icon": "Truck",
+    "icon": "truck",
     "mode": "card"
   }
 }
@@ -274,7 +285,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
 | `title` | `BilingualString` | Heading `{ ar, en }` | `{ ar: "تواصل معنا", en: "Get in touch" }` |
-| `subtitle` | `BilingualString` | Subheading `{ ar, en }` | `{ ar: "سنرد...", en: "We'll reply..." }` |
+| `subtitle` | `BilingualString` | Subheading `{ ar, en }` | `{ ar: "سنرد...", en: "We'll reply within one business day." }` |
 | `language` | `"ar" \| "en"` | Display language | `"ar"` |
 | `showPhone` | `boolean` | Show phone field | `true` |
 | `requirePhone` | `boolean` | Make phone required | `false` |
@@ -386,6 +397,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
 | `text` | `string` | Heading text | `"عنوان"` |
+| `level` | `"1"…"6"` | Semantic HTML heading level (`h1`–`h6`) | `"2"` |
 | `textAlign` | `"left" \| "center" \| "right"` | Text alignment | `"right"` |
 | `fontFamily` | `"body" \| "option1" \| "option2"` | Font family | `"body"` |
 | `fontSize` | `string` | `"theme-lg"` or pixel value | `"theme-lg"` |
@@ -402,6 +414,7 @@ Each block is described with its **properties**, accepted **values**, and a read
   "type": "ContentHeading",
   "props": {
     "text": "مرحباً بك في متجرنا",
+    "level": "2",
     "textAlign": "center",
     "fontFamily": "body",
     "fontSize": "theme-xl",
@@ -425,7 +438,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `html` | `string` | Raw HTML string | `"<p>Edit <strong>HTML</strong> here.</p>"` |
+| `html` | `string` | Raw HTML string | `"<p>Edit <strong>HTML</strong> here. You can use headings, lists, and links.</p>"` |
 
 ### JSON Example
 
@@ -449,7 +462,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `icon` | `string` | Lucide icon name (e.g. `"Star"`, `"Heart"`) | `"Star"` |
+| `icon` | `string` | Lucide icon key (lowercase, e.g. `"star"`, `"heart"`) | `"star"` |
 | `size` | `number` | Size in pixels (8–128) | `24` |
 | `colorMode` | `"theme" \| "fixed"` | Color source | `"theme"` |
 | `colorTheme` | `ColorKey` | Theme color key | `"primary"` |
@@ -461,7 +474,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 {
   "type": "ContentIcon",
   "props": {
-    "icon": "ShieldCheck",
+    "icon": "shield-check",
     "size": 48,
     "colorMode": "theme",
     "colorTheme": "primary"
@@ -619,6 +632,12 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `alignItems` | `"flex-start" \| "center" \| "flex-end" \| "stretch" \| "baseline"` | Cross-axis alignment | `"stretch"` |
 | `justifyContent` | `"flex-start" \| "center" \| "flex-end" \| "space-between" \| "space-around" \| "space-evenly"` | Main-axis alignment | `"flex-start"` |
 | `wrap` | `"wrap" \| "nowrap"` | Whether items wrap | `"nowrap"` |
+| `backgroundColor` | `string` | Card-like surface background (theme token or hex/rgba); empty = none | `""` |
+| `backgroundImage` | `string` | Background image URL (cover, centered) | `""` |
+| `backgroundOverlayColor` | `string` | Color overlay on background image (supports rgba) | `""` |
+| `padding` | `string` | Inner padding (spacing preset or px) | `"0px"` |
+| `borderRadius` | `string` | Corner radius (`"theme-none"` or px) | `"theme-none"` |
+| `boxShadow` | `"none" \| "sm" \| "md" \| "lg"` | Shadow preset | `"none"` |
 | `content` | `Slot` | Child blocks (Section not allowed) | starter content |
 
 ### JSON Example
@@ -632,6 +651,12 @@ Each block is described with its **properties**, accepted **values**, and a read
     "alignItems": "center",
     "justifyContent": "space-between",
     "wrap": "nowrap",
+    "backgroundColor": "",
+    "backgroundImage": "",
+    "backgroundOverlayColor": "",
+    "padding": "0px",
+    "borderRadius": "theme-none",
+    "boxShadow": "none",
     "content": []
   }
 }
@@ -689,14 +714,15 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `description` | `RichText` | HTML rich-text description | `"<p>Description</p>"` |
 | `align` | `"left" \| "center"` | Content alignment | `"left"` |
 | `padding` | `string` | Vertical padding e.g. `"64px"` | `"64px"` |
+| `quote` | `{ index: number, label: string }` | Auto-fill title/description from quote picker (editor demo) | — |
 | `buttons` | `HeroButton[]` | Array of CTA buttons | `[{ label: "Learn more", href: "#" }]` |
 | `buttons[].label` | `string` | Button text | `"الزر"` |
 | `buttons[].href` | `string` | Button URL | `"#"` |
-| `buttons[].variant` | `"primary" \| "secondary"` | Button variant | `"primary"` |
+| `buttons[].variant` | `"primary" \| "secondary"` | Button variant (optional; defaults to primary in render) | — |
 | `image.mode` | `"inline" \| "background" \| "custom"` | Image display mode | — |
 | `image.url` | `string` | Image URL | — |
+| `image.content` | `Slot` | Custom content slot when `image.mode = "custom"` | `[]` |
 | `image.backgroundAttachment` | `"scroll" \| "fixed" \| "local"` | Background attachment style | `"scroll"` |
-| `quote` | `{ index: number, label: string }` | Auto-fill from quote picker | — |
 
 ### JSON Example
 
@@ -908,7 +934,8 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `product` | `ProductPickerRef \| null` | `{ id, titleAr, titleEn }` | `null` |
+| `product` | `ProductPickerRef \| null` | `{ id, titleAr?, titleEn? }` from product picker | `null` |
+| `metadata` | `ProductResourceMetadata \| null` | **Read-only.** Auto-populated when `product` is set; tells mobile where to fetch product data | `null` |
 | `variant` | `"vertical" \| "horizontal" \| "compact" \| "featured"` | Card layout | `"vertical"` |
 | `radius` | `string` | Border radius | `"theme-md"` |
 | `language` | `"ar" \| "en"` | Display language | `"ar"` |
@@ -937,6 +964,12 @@ Each block is described with its **properties**, accepted **values**, and a read
   "type": "ProductCard",
   "props": {
     "product": { "id": "prod_01", "titleAr": "قميص كلاسيكي", "titleEn": "Classic Shirt" },
+    "metadata": {
+      "type": "product",
+      "method": "get",
+      "id": "prod_01",
+      "apiUrl": "https://api.example.com/admin/products/prod_01?include=PRICING&include=IMAGES&include=INVENTORY"
+    },
     "variant": "vertical",
     "radius": "theme-md",
     "language": "ar",
@@ -1072,7 +1105,8 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `collection` | `string` | Collection name | first available |
+| `collection` | `CollectionPickerRef \| null` | `{ id, name, productCount? }` from collection picker | `null` |
+| `metadata` | `ProductsGridResourceMetadata \| null` | **Read-only.** Auto-populated when `collection` is set | `null` |
 | `columns` | `"1"…"6"` | Number of columns | `"3"` |
 | `maxRows` | `"0"…"10"` | Max rows, `"0"` = all | `"0"` |
 | `gap` | `"sm" \| "md" \| "lg" \| "xl"` | Gap between cards | `"md"` |
@@ -1084,7 +1118,14 @@ Each block is described with its **properties**, accepted **values**, and a read
 {
   "type": "ProductsGrid",
   "props": {
-    "collection": "featured",
+    "collection": { "id": "coll_featured", "name": "Featured", "productCount": 24 },
+    "metadata": {
+      "type": "collection",
+      "method": "get",
+      "collectionId": "coll_featured",
+      "productCount": 24,
+      "apiUrl": "https://api.example.com/admin/collections/coll_featured/products?page=0&size=100"
+    },
     "columns": "4",
     "maxRows": "2",
     "gap": "md",
@@ -1128,16 +1169,19 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `name` | `string` | Human-readable label for the outline | `"Section"` |
+| `name` | `string` | Human-readable label for the outline | `"New Section"` |
 | `anchorId` | `string` | CSS id for in-page links | `""` |
 | `visible` | `boolean` | Show/hide in published renderer | `true` |
 | `paddingTop` | `string` | CSS value e.g. `"80px"` | `"80px"` |
 | `paddingBottom` | `string` | CSS value | `"80px"` |
 | `paddingHorizontal` | `string` | Side padding | `"24px"` |
-| `backgroundColor` | `string` | CSS color | `"#ffffff"` |
+| `backgroundColor` | `string` | CSS color (ignored when `backgroundImage` is set) | `"#ffffff"` |
+| `backgroundImage` | `string` | Background image URL (cover, centered) | `""` |
+| `backgroundOverlayColor` | `string` | Color overlay on background image (supports rgba) | `""` |
 | `theme` | `"dark" \| "light"` | Text color tone inside section | `"dark"` |
 | `maxWidth` | `string` | Container max-width | `"1280px"` |
 | `columns` | `number \| string` | Grid column count (1–6) | `1` |
+| `columnsMobile` | `number \| string` | Grid columns at ≤768px viewport | `1` |
 | `gridGap` | `string` | Gap between columns | `"24px"` |
 | `content` | `Slot` | Child blocks (no nested Section) | starter content |
 
@@ -1154,9 +1198,12 @@ Each block is described with its **properties**, accepted **values**, and a read
     "paddingBottom": "60px",
     "paddingHorizontal": "24px",
     "backgroundColor": "#f8f9fa",
+    "backgroundImage": "",
+    "backgroundOverlayColor": "",
     "theme": "dark",
     "maxWidth": "1280px",
     "columns": 1,
+    "columnsMobile": 1,
     "gridGap": "24px",
     "content": []
   }
@@ -1435,6 +1482,9 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `links` | `HeaderLink[]` | Nav links `[{ label, labelAr, link }]` | default links |
 | `backgroundColor` | `string` | Background color (empty = theme) | `""` |
 | `textColor` | `string` | Text color (empty = theme) | `""` |
+| `layoutMode` | `"split" \| "centered"` | `centered` puts nav in the middle; `split` keeps brand and nav on opposite sides | `"split"` |
+| `menuAlign` | `"start" \| "end"` | For split layout — which edge the nav sits on | `"end"` |
+| `navStyle` | `"underline" \| "pill"` | Nav hover/active styling | `"pill"` |
 | `showDrawerButton` | `boolean` | Show hamburger button | `false` |
 | `drawerButtonIcon` | `"menu" \| "filter" \| "cart" \| "user" \| "none"` | Icon type | `"menu"` |
 | `drawerName` | `string` | Target drawer name | `"site-drawer"` |
@@ -1457,6 +1507,9 @@ Each block is described with its **properties**, accepted **values**, and a read
     ],
     "backgroundColor": "",
     "textColor": "",
+    "layoutMode": "split",
+    "menuAlign": "end",
+    "navStyle": "pill",
     "showDrawerButton": true,
     "drawerButtonIcon": "menu",
     "drawerName": "site-drawer"
@@ -1707,6 +1760,49 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 ## Shared Concepts
 
+### ProductPickerRef
+
+Used by `ProductCard`, `ProductImage`, `ProductInfo`:
+
+```json
+{ "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt" }
+```
+
+### CollectionPickerRef
+
+Used by `ProductsGrid`:
+
+```json
+{ "id": "coll_featured", "name": "Featured", "productCount": 24 }
+```
+
+### Resource metadata (read-only)
+
+Auto-populated by the editor when a product or collection is selected. Persisted in `store_config.json` so mobile can fetch live data at render time.
+
+**ProductCard** — `ProductResourceMetadata`:
+
+```json
+{
+  "type": "product",
+  "method": "get",
+  "id": "prod_01",
+  "apiUrl": "https://api.example.com/admin/products/prod_01?include=PRICING&include=IMAGES&include=INVENTORY"
+}
+```
+
+**ProductsGrid** — `ProductsGridResourceMetadata`:
+
+```json
+{
+  "type": "collection",
+  "method": "get",
+  "collectionId": "coll_featured",
+  "productCount": 24,
+  "apiUrl": "https://api.example.com/admin/collections/coll_featured/products?page=0&size=100"
+}
+```
+
 ### LinkValue
 
 Used by `Button`, `ContentButton`, `NavMenu`, `SideDrawer`, `SiteHeader`, `SiteFooter`, `SiteDrawerShell`, etc.
@@ -1735,5 +1831,34 @@ Many color and size fields accept `"theme-*"` tokens which resolve to CSS variab
 | Color | `"theme-primary"`, `"theme-text"`, `"theme-surface"`, `"theme-neutral"` |
 | Size (font) | `"theme-sm"`, `"theme-md"`, `"theme-lg"`, `"theme-xl"` |
 | Font weight | `"theme-light"`, `"theme-normal"`, `"theme-semibold"`, `"theme-bold"` |
-| Radius | `"theme-sm"`, `"theme-md"`, `"theme-lg"`, `"theme-full"` |
+| Radius | `"theme-sm"`, `"theme-md"`, `"theme-lg"`, `"theme-full"`, `"theme-none"` |
 | Space | `"theme-8"`, `"theme-16"`, `"theme-24"`, `"theme-40"` |
+
+### Layout (`layout` prop)
+
+Most blocks accept an optional `layout` object on `props`. Common fields for mobile converters:
+
+| Field | Type | Notes |
+|---|---|---|
+| `hideOnMobile` | `boolean` | Hide block below tablet breakpoint |
+| `hideOnTablet` | `boolean` | Hide block at tablet width |
+| `hideOnDesktop` | `boolean` | Hide block at desktop width |
+| `paddingTop` / `paddingBottom` / `paddingLeft` / `paddingRight` | `string` | Per-side padding |
+| `marginTop` / `marginRight` / `marginBottom` / `marginLeft` | `string` | Per-side margin |
+| `positionMode` | `"static" \| "float"` | Out-of-flow floating placement |
+| `spanCol` / `spanRow` | `number` | Grid span inside parent Section |
+
+Example:
+
+```json
+{
+  "type": "ContentParagraph",
+  "props": {
+    "text": "Desktop only promo",
+    "layout": {
+      "hideOnMobile": true,
+      "hideOnTablet": true
+    }
+  }
+}
+```

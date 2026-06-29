@@ -14,21 +14,40 @@
     {
       "type": "Section",
       "props": {
+        "name": "Catalog Demo",
         "paddingTop": "24px",
         "paddingBottom": "24px",
         "paddingHorizontal": "16px",
+        "columns": 1,
+        "columnsMobile": 1,
         "content": [
           {
             "type": "ContentHeading",
-            "props": { "text": "عنوان", "level": "h2", "align": "right" }
+            "props": {
+              "text": "عنوان",
+              "level": "2",
+              "textAlign": "right",
+              "fontSize": "theme-lg",
+              "fontWeight": "theme-semibold"
+            }
           },
           {
             "type": "ContentParagraph",
             "props": {
-              "text": "نص تجريبي",
+              "text": "نص تجريبي من BLOCKS.md",
+              "textAlign": "right",
               "fontSize": "theme-sm",
-              "color": "theme-neutral",
-              "align": "right"
+              "color": "theme-neutral"
+            }
+          },
+          {
+            "type": "ContentButton",
+            "props": {
+              "label": "تسوق الآن",
+              "destinationType": "link",
+              "link": { "kind": "page", "pageId": "/products" },
+              "buttonVariant": "primary",
+              "buttonVariantSize": "md"
             }
           },
           {
@@ -37,7 +56,8 @@
               "src": "https://example.com/banner.jpg",
               "alt": "بانر",
               "objectFit": "cover",
-              "radius": "theme-md"
+              "radius": "theme-md",
+              "align": "center"
             }
           },
           {
@@ -45,7 +65,8 @@
             "props": {
               "src": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
               "size": "theme-315",
-              "radius": "theme-md"
+              "radius": "theme-md",
+              "align": "center"
             }
           },
           {
@@ -53,9 +74,23 @@
             "props": {
               "direction": "row",
               "gap": 12,
+              "padding": "8px",
+              "borderRadius": "theme-md",
+              "backgroundColor": "theme-surface",
               "content": [
-                { "type": "Text", "props": { "text": "عنصر 1" } },
-                { "type": "Text", "props": { "text": "عنصر 2" } }
+                { "type": "Text", "props": { "text": "عنصر 1", "align": "right" } },
+                { "type": "Text", "props": { "text": "عنصر 2", "align": "right" } }
+              ]
+            }
+          },
+          {
+            "type": "Accordion",
+            "props": {
+              "heading": "الأسئلة الشائعة",
+              "variant": "soft",
+              "items": [
+                { "title": "كم يستغرق التوصيل؟", "body": "2-4 أيام عمل.", "open": true },
+                { "title": "هل يمكن الإرجاع؟", "body": "خلال 7 أيام.", "open": false }
               ]
             }
           },
@@ -76,6 +111,7 @@
               "source": "inline",
               "layoutVariant": "grid",
               "columns": 2,
+              "language": "ar",
               "itemCount": 2,
               "inlineItems": [
                 {
@@ -98,17 +134,32 @@
           {
             "type": "ProductCard",
             "props": {
-              "product": { "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt", "price": 120 },
+              "product": { "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt" },
+              "metadata": {
+                "type": "product",
+                "method": "get",
+                "id": "prod_01",
+                "apiUrl": "https://api.example.com/admin/products/prod_01?include=PRICING&include=IMAGES&include=INVENTORY"
+              },
               "variant": "vertical",
-              "showAddToCart": true
+              "language": "ar",
+              "showAddToCart": true,
+              "showViewDetails": true
             }
           },
           {
             "type": "ProductsGrid",
             "props": {
-              "collection": "featured",
+              "collection": { "id": "coll_featured", "name": "Featured", "productCount": 24 },
+              "metadata": {
+                "type": "collection",
+                "method": "get",
+                "collectionId": "coll_featured",
+                "productCount": 24,
+                "apiUrl": "https://api.example.com/admin/collections/coll_featured/products?page=0&size=8"
+              },
               "columns": "2",
-              "maxRows": "4",
+              "maxRows": "2",
               "gap": "md",
               "cardVariant": "compact"
             }

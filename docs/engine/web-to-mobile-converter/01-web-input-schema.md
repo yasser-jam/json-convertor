@@ -84,7 +84,19 @@ After ingest, each page becomes:
 | `type` | Puck block name (PascalCase) |
 | `props.id` | Web editor id; use as seed for mobile `id` |
 | `props.layout` | Optional cross-cutting layout — [06-layout-cross-cutting.md](06-layout-cross-cutting.md) |
+| `props.metadata` | Read-only on `ProductCard` / `ProductsGrid` — drives API binding |
 | Child slots | See table below |
+
+### Block registry (editor)
+
+| Group | Types |
+|-------|-------|
+| **layout** | `Section`, `Group`, `Sidebar` |
+| **blocks** | `ContentHeading`, `ContentParagraph`, `ContentButton`, `ContentImage`, `ContentDivider`, `ContentIcon`, `Accordion`, `ImageGallery`, `Testimonials`, `VideoEmbed`, `Space`, `ContactForm` |
+| **storeBlocks** | `ProductCard`, `ProductsGrid`, `CartSection`, `CheckoutForm`, `OrderHistory`, `Wishlist`, `CategoryListMenu`, `ProductSearchMenu` |
+| **shell** | `SiteHeader`, `SiteDrawerShell`, `SiteFooter` |
+| **legacy** (hidden picker, still rendered) | `SideDrawer`, `Heading`, `Text`, `RichText`, `Button`, `Card`, `Grid`, `Flex`, `Hero`, `Logos`, `Stats`, `Template`, `NavMenu`, `ContentIcon`, `ContentHtml`, `ProductImage`, `ProductInfo` |
+| **dev-only** | `Blank` (not registered — ignore unless legacy data) |
 
 ### Child slot names
 
@@ -119,11 +131,12 @@ Full tables in [docs/blocks.md §2](../../BLOCKS.md). Converter consumes:
 | Concept | Converter policy |
 |---------|------------------|
 | CSS custom properties (`--theme-color-*`) | Resolve to hex in mobile `theme.colors` or node `props.color` |
-| `hideOnMobile` / `hideOnTablet` / `hideOnDesktop` | On mobile output, treat as **visible** unless block rule says omit |
+| `hideOnMobile` / `hideOnTablet` / `hideOnDesktop` | On mobile: **omit** when `hideOnMobile: true`; include when only `hideOnDesktop: true` — [06-layout-cross-cutting.md](06-layout-cross-cutting.md) |
 | Float / fixed positioning | Map to `stack` + `positioned` where needed; else inline in flow |
 | TipTap HTML in `richtext` fields | Strip to safe subset or plain text — [blocks/10-content-blocks.md](blocks/10-content-blocks.md) |
-| Lucide icon names | Map to Material `icon.name` — [blocks/10-content-blocks.md](blocks/10-content-blocks.md) |
-| Mock fixtures (`prod-001`, …) | Replace with API binding — [15-data-and-api-binding.md](15-data-and-api-binding.md) |
+| Lucide icon names (kebab-case) | Map to Material `icon.name` — [blocks/10-content-blocks.md](blocks/10-content-blocks.md) |
+| `metadata.apiUrl` on commerce blocks | Normalize to mobile `requestUrl` — [15-data-and-api-binding.md](15-data-and-api-binding.md) |
+| Legacy string `collection` on ProductsGrid | Coerce to `CollectionPickerRef` — [07-shared-fields.md](07-shared-fields.md) |
 
 ---
 

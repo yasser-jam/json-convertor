@@ -77,16 +77,16 @@ flowchart TB
 | [07-shared-fields.md](07-shared-fields.md) | Color, typography, links, button actions |
 | [08-page-assembly.md](08-page-assembly.md) | Page shell, `appBar`, `scroll`, body |
 
-### Block rules (40 web types)
+### Block rules (43 web types)
 
 | File | Web blocks |
 |------|------------|
-| [blocks/09-layout-blocks.md](blocks/09-layout-blocks.md) | Section, Flex, Grid, Group |
-| [blocks/10-content-blocks.md](blocks/10-content-blocks.md) | Heading, Text, Button, Hero, … (14 types) |
-| [blocks/11-commerce-blocks.md](blocks/11-commerce-blocks.md) | ProductGrid, CartSection, CheckoutForm, … (11 types) |
-| [blocks/12-testimonial-blocks.md](blocks/12-testimonial-blocks.md) | TestimonialCard, TestimonialGrid |
-| [blocks/13-shell-blocks.md](blocks/13-shell-blocks.md) | SiteHeader, SiteFooter, SiteDrawerShell, Logo |
-| [blocks/14-utility-blocks.md](blocks/14-utility-blocks.md) | Html, Countdown, CookieConsent, SearchModal |
+| [blocks/09-layout-blocks.md](blocks/09-layout-blocks.md) | Section, Group, Flex, Grid, Sidebar |
+| [blocks/10-content-blocks.md](blocks/10-content-blocks.md) | Content* primitives, Accordion, ImageGallery, legacy Heading/Text/Hero/Card |
+| [blocks/11-commerce-blocks.md](blocks/11-commerce-blocks.md) | ProductCard, ProductsGrid (+ metadata), CartSection, CheckoutForm, … |
+| [blocks/12-testimonial-blocks.md](blocks/12-testimonial-blocks.md) | Testimonials (+ legacy TestimonialCard/Grid) |
+| [blocks/13-shell-blocks.md](blocks/13-shell-blocks.md) | SiteHeader, SiteFooter, SiteDrawerShell (block-level props) |
+| [blocks/14-utility-blocks.md](blocks/14-utility-blocks.md) | ContentHtml, legacy utility types |
 
 ### Data, validation, fixtures
 

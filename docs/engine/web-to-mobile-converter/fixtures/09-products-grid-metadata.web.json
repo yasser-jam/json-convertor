@@ -1,0 +1,17 @@
+{
+  "type": "ProductsGrid",
+  "props": {
+    "collection": { "id": "coll_featured", "name": "Featured", "productCount": 24 },
+    "metadata": {
+      "type": "collection",
+      "method": "get",
+      "collectionId": "coll_featured",
+      "productCount": 24,
+      "apiUrl": "https://api.example.com/admin/collections/coll_featured/products?page=0&size=8"
+    },
+    "columns": "2",
+    "maxRows": "2",
+    "gap": "md",
+    "cardVariant": "vertical"
+  }
+}
