@@ -35,22 +35,37 @@ const WEB_TYPE_ALIASES: Record<string, string> = {
 };
 
 const UNSUPPORTED_LEAF_BLOCKS = new Set([
-  "Sidebar",
-  "SideDrawer",
-  "NavMenu",
   "CategoryListMenu",
   "ProductSearchMenu",
-  "Template",
-  "Logos",
-  "Stats",
-  "ContactForm",
+  "SideDrawer",
 ]);
 
 function normalizeBlockType(type: string): string {
   return WEB_TYPE_ALIASES[type] || type;
 }
 
-const GAP_TOKEN_MAP: Record<string, number> = { sm: 10, md: 16, lg: 24, xl: 36 };
+const GAP_TOKEN_MAP: Record<string, number> = { sm: 8, md: 12, lg: 16, xl: 24 };
+
+const BUTTON_VARIANT_MAP: Record<string, string> = {
+  primary: "elevated",
+  secondary: "outlined",
+  outline: "outlined",
+  ghost: "text",
+  danger: "filled",
+};
+
+function resolveButtonVariant(variant: string | undefined): string {
+  if (!variant) return "elevated";
+  return BUTTON_VARIANT_MAP[variant] || "elevated";
+}
+
+function flexProps(
+  mainAxisAlignment: string,
+  crossAxisAlignment: string,
+  extra?: Record<string, unknown>
+): Record<string, unknown> {
+  return { mainAxisAlignment, crossAxisAlignment, ...extra };
+}
 
 // ─── Utility functions ──────────────────────────────────────────────────────
 
@@ -182,11 +197,28 @@ function resolveGridGap(gap: string | number | undefined): number {
   return parsePx(gap, 16);
 }
 
-function buildCollectionRequestUrl(collection: string, maxSize: number): string {
+function buildCollectionRequestUrl(collection: string | Record<string, unknown>, maxSize: number): string {
   const size = Math.min(maxSize, 20);
-  const base = `/api/v1/public/products?page=0&size=${size}`;
-  if (!collection || collection === "all") return base;
-  return `${base}&collection=${encodeURIComponent(collection)}`;
+  const collectionId =
+    typeof collection === "object" && collection?.id
+      ? String(collection.id)
+      : collection && collection !== "all"
+        ? String(collection)
+        : "";
+  if (!collectionId || collectionId === "all") {
+    return `/api/v1/public/products?page=0&size=${size}`;
+  }
+  return `/api/v1/public/collections/${encodeURIComponent(collectionId)}/products?page=0&size=${size}`;
+}
+
+function normalizeAdminApiUrl(apiUrl: string): string {
+  try {
+    const url = new URL(apiUrl);
+    const path = url.pathname.replace(/^\/admin\//, "/public/");
+    return path + url.search;
+  } catch {
+    return apiUrl.replace(/https?:\/\/[^/]+\/admin\//, "/api/v1/public/");
+  }
 }
 
 const FONT_WEIGHT_MAP: Record<string, string> = {
@@ -204,19 +236,40 @@ function resolveLineHeight(lh: string | undefined): number | undefined {
 }
 
 const LUCIDE_TO_MATERIAL: Record<string, string> = {
-  Star: "star", Heart: "favorite", ShoppingCart: "shopping_cart", Menu: "menu",
-  X: "close", Search: "search", User: "person", Home: "home", Package: "package",
-  Palette: "palette", ArrowRight: "arrow_forward", ArrowLeft: "arrow_back",
-  ChevronDown: "expand_more", ChevronUp: "expand_less", Plus: "add",
-  Minus: "remove", Trash: "delete", Edit: "edit", Settings: "settings",
-  Bell: "notifications", Mail: "email", Phone: "phone", MapPin: "location_on",
-  Clock: "access_time", Check: "check", AlertCircle: "error_outline",
-  Info: "info", XCircle: "cancel", ExternalLink: "open_in_new",
-  Grid: "grid_view", List: "list", Sliders: "tune",
+  Star: "star", star: "star", Heart: "favorite", heart: "favorite",
+  ShoppingCart: "shopping_cart", "shopping-cart": "shopping_cart",
+  Menu: "menu", menu: "menu", X: "close", x: "close", close: "close",
+  Search: "search", search: "search", User: "person", user: "person",
+  Home: "home", home: "home", Package: "package",
+  Palette: "palette", ArrowRight: "arrow_forward", "arrow-right": "arrow_forward",
+  ArrowLeft: "arrow_back", "arrow-left": "arrow_back",
+  ChevronDown: "expand_more", ChevronUp: "expand_less", Plus: "add", plus: "add",
+  Minus: "remove", minus: "remove", Trash: "delete", trash: "delete",
+  Edit: "edit", edit: "edit", pencil: "edit", Settings: "settings",
+  Bell: "notifications", bell: "notifications", Mail: "email", mail: "email",
+  Phone: "phone", phone: "phone", MapPin: "location_on", "map-pin": "location_on",
+  Clock: "access_time", clock: "access_time", Check: "check", check: "check",
+  AlertCircle: "error_outline", "alert-circle": "error_outline",
+  Info: "info", info: "info", XCircle: "cancel",
+  ExternalLink: "open_in_new", Grid: "grid_view", grid: "grid_view",
+  List: "list", list: "list", Sliders: "tune",
+  "shield-check": "verified_user", ShieldCheck: "verified_user",
+  truck: "local_shipping", Truck: "local_shipping",
+  filter: "filter_list", share: "share", eye: "visibility",
+  "check-circle": "check_circle", feather: "edit",
+  calendar: "calendar_today", tag: "label",
 };
+
+function kebabToPascal(str: string): string {
+  return str.split("-").map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join("");
+}
+
 function resolveIcon(lucideName: string | undefined): string {
-  if (!lucideName) return "circle";
-  return LUCIDE_TO_MATERIAL[lucideName] || lucideName.toLowerCase().replace(/([A-Z])/g, "_$1").replace(/^_/, "");
+  if (!lucideName) return "help_outline";
+  if (LUCIDE_TO_MATERIAL[lucideName]) return LUCIDE_TO_MATERIAL[lucideName];
+  const pascal = kebabToPascal(lucideName);
+  if (LUCIDE_TO_MATERIAL[pascal]) return LUCIDE_TO_MATERIAL[pascal];
+  return "help_outline";
 }
 
 function getChildren(block: Record<string, unknown>): Record<string, unknown>[] {
@@ -315,7 +368,7 @@ function applyLayout(
 ): Record<string, unknown> {
   if (!layout) return node;
 
-  const style: Record<string, unknown> = {};
+  const boxProps: Record<string, unknown> = {};
   const padding: Record<string, number> = {};
   const margin: Record<string, number> = {};
 
@@ -334,11 +387,11 @@ function applyLayout(
   const mb = layout.marginBottom as string; if (mb) margin.bottom = parsePx(mb);
   const ml = layout.marginLeft as string; if (ml) margin.left = parsePx(ml);
 
-  if (Object.keys(padding).length > 0) style.padding = padding;
-  if (Object.keys(margin).length > 0) style.margin = margin;
+  if (Object.keys(padding).length > 0) boxProps.padding = padding;
+  if (Object.keys(margin).length > 0) boxProps.margin = margin;
 
-  if (Object.keys(style).length > 0) {
-    node = { ...node, style: { ...((node.style || {}) as Record<string, unknown>), ...style } };
+  if (Object.keys(boxProps).length > 0) {
+    node = { ...node, props: { ...((node.props || {}) as Record<string, unknown>), ...boxProps } };
   }
 
   const posMode = layout.positionMode as string;
@@ -397,11 +450,6 @@ function transformText(block: Record<string, unknown>, rootProps: Record<string,
   const fontWeight = resolveThemeFontWeight(props.fontWeight as string);
   if (fontWeight) (node.props as Record<string, unknown>).fontWeight = fontWeight;
 
-  const lineHeight = props.lineHeight
-    ? resolveLineHeight(String(props.lineHeight).replace("theme-", ""))
-    : undefined;
-  if (lineHeight) (node.props as Record<string, unknown>).lineHeight = lineHeight;
-
   const textColor = resolveThemeColor(props.color as string, rootProps)
     || resolveTextColor(props.color as string);
   if (textColor) (node.props as Record<string, unknown>).color = textColor;
@@ -413,18 +461,21 @@ function transformHeading(block: Record<string, unknown>, rootProps: Record<stri
   const props = (block.props || {}) as Record<string, unknown>;
   const lang = (rootProps.language as string) || "ar";
   const dir = (rootProps.direction as string) || "rtl";
-  const level = parseInt((props.level as string) || "2", 10);
+  const levelRaw = (props.level as string) || "2";
+  const levelNum = levelRaw.startsWith("h")
+    ? parseInt(levelRaw.replace("h", ""), 10)
+    : parseInt(levelRaw, 10) || 2;
   const sizeMap: Record<number, number> = { 1: 28, 2: 22, 3: 18, 4: 16 };
-  const fontSize = resolveFontSize(props.size as string, sizeMap[level] || 22);
+  const fontSize = resolveFontSize(props.size as string, sizeMap[levelNum] || 22);
 
   const node: Record<string, unknown> = {
     id: generateId("heading"),
     type: "text",
     props: {
-      value: (props.text as string) || "",
+      value: resolveBilingual(props.text as string, props.textAr as string, lang),
       fontSize,
-      fontWeight: level <= 2 ? "bold" : "medium",
-      textAlign: (props.align as string) || (dir === "rtl" ? "right" : "left"),
+      fontWeight: levelNum <= 2 ? "bold" : "w600",
+      textAlign: (props.align as string) || (props.textAlign as string) || (dir === "rtl" ? "right" : "left"),
     },
   };
 
@@ -436,7 +487,7 @@ function transformHeading(block: Record<string, unknown>, rootProps: Record<stri
 
 function transformSpace(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
-  const size = parsePx(props.size as string, 16);
+  const size = resolveThemePx(props.size as string | number, rootProps, 16);
   const dir = (props.direction as string) || "vertical";
 
   const node: Record<string, unknown> = {
@@ -457,13 +508,12 @@ function transformButton(block: Record<string, unknown>, rootProps: Record<strin
   const outProps: Record<string, unknown> = {
     label,
     height: BUTTON_SIZE_HEIGHT[size] || 48,
-    variant: (props.variant as string) || "primary",
+    variant: resolveButtonVariant((props.variant as string) || (props.buttonVariant as string)),
   };
 
   const btnColor = resolveColor(props.colorMode as string, props.colorTheme as string, props.colorFixed as string, rootProps);
   if (btnColor) outProps.color = btnColor;
   if (fullWidth) outProps.fullWidth = true;
-  if (props.fontFamily && props.fontFamily !== "body") outProps.fontFamily = props.fontFamily;
 
   const tap = resolveTap(props, rootProps);
 
@@ -493,7 +543,7 @@ function transformLink(block: Record<string, unknown>, rootProps: Record<string,
 
 function transformIcon(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
-  const iconName = resolveIcon(props.name as string);
+  const iconName = resolveIcon((props.icon as string) || (props.name as string));
   const size = parsePx(props.size as string, 24);
 
   const outProps: Record<string, unknown> = { name: iconName, size };
@@ -517,9 +567,13 @@ function transformImage(block: Record<string, unknown>, rootProps: Record<string
     url: (props.src as string) || "",
     source: "network",
     alt: (props.alt as string) || "",
+    semanticsLabel: (props.alt as string) || "",
     fit: (props.objectFit as string) || "cover",
   };
+  const wNum = w !== "100%" && !w.includes("auto") ? parsePx(w) : undefined;
+  const hNum = h !== "auto" ? parsePx(h) : undefined;
   if (aspect !== undefined) outProps.aspectRatio = aspect;
+  else if (wNum && hNum && hNum > 0) outProps.aspectRatio = wNum / hNum;
 
   const radiusToken = (props.radius as string) || (props.borderRadius as string);
   if (radiusToken) {
@@ -566,29 +620,48 @@ function transformVideo(block: Record<string, unknown>, rootProps: Record<string
 function transformYouTube(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
   const rawUrl = (props.url as string) || (props.src as string) || "";
-  const embedUrl = toEmbedUrl(rawUrl);
-  const aspect = resolveAspectRatio((props.aspectRatio as string) || "16:9");
-
-  const outProps: Record<string, unknown> = { url: embedUrl, controls: true, autoPlay: false, loop: false, muted: false };
+  const videoId = extractYouTubeVideoId(rawUrl);
+  const aspect = resolveAspectRatio((props.aspectRatio as string) || "16:9") ?? 1.777;
 
   const radiusToken = (props.radius as string) || (props.borderRadius as string);
-  if (radiusToken) {
-    outProps.borderRadius = radiusToken.startsWith("theme-")
-      ? resolveThemePx(radiusToken, rootProps, 12)
-      : radiusToken;
+  const borderRadius = radiusToken
+    ? (radiusToken.startsWith("theme-") ? resolveThemePx(radiusToken, rootProps, 12) : parsePx(radiusToken, 12))
+    : undefined;
+
+  if (videoId || isYouTubeUrl(rawUrl)) {
+    const id = videoId || extractYouTubeVideoId(toEmbedUrl(rawUrl)) || "";
+    const imageProps: Record<string, unknown> = {
+      url: id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : rawUrl,
+      source: "network",
+      aspectRatio: aspect,
+      fit: "cover",
+    };
+    if (borderRadius !== undefined) imageProps.borderRadius = borderRadius;
+
+    const node: Record<string, unknown> = {
+      id: generateId("youtube-thumb"),
+      type: "image",
+      props: imageProps,
+      tap: { type: "openUrl", url: rawUrl },
+    };
+    return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
   }
+
+  const outProps: Record<string, unknown> = {
+    url: rawUrl,
+    showControls: true,
+    autoplay: false,
+  };
 
   const sizeToken = props.size as string;
-  if (sizeToken) {
-    const height = resolveThemePx(sizeToken, rootProps, 315);
-    outProps.height = height;
-  }
+  if (sizeToken) outProps.height = resolveThemePx(sizeToken, rootProps, 480);
+  if (borderRadius !== undefined) outProps.borderRadius = borderRadius;
 
-  let node: Record<string, unknown> = { id: generateId("youtube"), type: "videoPlayer", props: outProps };
+  let node: Record<string, unknown> = { id: generateId("video"), type: "videoPlayer", props: outProps };
 
   if (aspect !== undefined && !sizeToken) {
     node = {
-      id: generateId("youtube-wrapper"),
+      id: generateId("video-wrapper"),
       type: "container",
       props: { aspectRatio: aspect },
       child: node,
@@ -600,12 +673,19 @@ function transformYouTube(block: Record<string, unknown>, rootProps: Record<stri
 
 function toEmbedUrl(url: string): string {
   if (!url) return "";
-  // Already embed
   if (url.includes("/embed/")) return url;
-  // youtube.com/watch?v=ID
   const watchMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]+)/);
   if (watchMatch) return `https://www.youtube.com/embed/${watchMatch[1]}`;
   return url;
+}
+
+function extractYouTubeVideoId(url: string): string | null {
+  const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+function isYouTubeUrl(url: string): boolean {
+  return /youtube\.com|youtu\.be/.test(url);
 }
 
 function transformHero(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
@@ -640,11 +720,15 @@ function transformHero(block: Record<string, unknown>, rootProps: Record<string,
   if (buttons.length > 0) {
     const btnNodes = buttons.map((btn) => {
       const bProps: Record<string, unknown> = {
-        label: resolveBilingual(btn.label as string, btn.labelAr as string, lang),
+        label: resolveBilingual(
+          (btn.label as string) || (btn.text as string),
+          btn.labelAr as string,
+          lang
+        ),
         height: 48,
-        variant: (btn.variant as string) || "primary",
+        variant: resolveButtonVariant((btn.variant as string) || "primary"),
       };
-      const tapHref = btn.href as string;
+      const tapHref = (btn.href as string) || "";
       return {
         id: generateId("hero-btn"),
         type: "button",
@@ -655,30 +739,41 @@ function transformHero(block: Record<string, unknown>, rootProps: Record<string,
     children.push({
       id: generateId("hero-buttons"),
       type: "row",
-      props: { mainAxis: align === "center" ? "center" : align === "right" ? "end" : "start", crossAxis: "center", gap: 12 },
+      props: { mainAxisAlignment: align === "center" ? "center" : align === "right" ? "end" : "start", crossAxisAlignment: "center", gap: 12 },
       children: btnNodes,
     });
   }
 
-  const imgMode = (props.image as Record<string, unknown>)?.mode as string;
-  const imgUrl = (props.image as Record<string, unknown>)?.url as string;
+  const imgMode = (props.image as Record<string, unknown>)?.mode as string
+    || ((props.variant as string) === "background" ? "background" : undefined);
+  const imgUrl = (props.image as Record<string, unknown>)?.url as string
+    || (props.backgroundImage as string);
+  const heroHeight = props.height ? parsePx(props.height as string, 0) : undefined;
 
   if (imgMode === "background" && imgUrl) {
     const innerCol: Record<string, unknown> = {
       id: generateId("hero-col"),
       type: "column",
-      props: { crossAxis: align, mainAxis: "center", gap: 16 },
+      props: flexProps("center", align === "center" ? "center" : align === "right" ? "end" : "start", {
+        gap: 16,
+        padding,
+        ...(heroHeight ? { height: heroHeight } : {}),
+      }),
       children,
     };
     return applyLayout(
       {
-        id: generateId("hero-container"),
-        type: "container",
-        style: {
-          color: "#00000044",
-          padding: { top: padding, bottom: padding, left: 24, right: 24 },
-        },
-        child: innerCol,
+        id: generateId("hero-stack"),
+        type: "stack",
+        props: { fit: "loose" },
+        children: [
+          {
+            id: generateId("hero-bg"),
+            type: "image",
+            props: { url: imgUrl, source: "network", fit: "cover" },
+          },
+          innerCol,
+        ],
       },
       props.layout as Record<string, unknown> | undefined,
       rootProps
@@ -689,7 +784,7 @@ function transformHero(block: Record<string, unknown>, rootProps: Record<string,
     const col: Record<string, unknown> = {
       id: generateId("hero-split-col"),
       type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap: 16 },
+      props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 16 },
       children: [
         {
           id: generateId("hero-split-img"),
@@ -699,7 +794,7 @@ function transformHero(block: Record<string, unknown>, rootProps: Record<string,
         {
           id: generateId("hero-split-content"),
           type: "column",
-          props: { crossAxis: align, mainAxis: "start", gap: 16 },
+          props: { crossAxisAlignment: align, mainAxisAlignment: "start", gap: 16 },
           children,
         },
       ],
@@ -710,7 +805,7 @@ function transformHero(block: Record<string, unknown>, rootProps: Record<string,
   const column: Record<string, unknown> = {
     id: generateId("hero-col"),
     type: "column",
-    props: { crossAxis: align, mainAxis: "center", gap: 16 },
+    props: { crossAxisAlignment: align, mainAxisAlignment: "center", gap: 16 },
     children,
   };
 
@@ -718,7 +813,7 @@ function transformHero(block: Record<string, unknown>, rootProps: Record<string,
     {
       id: generateId("hero-container"),
       type: "container",
-      style: { padding: { top: padding, bottom: padding, left: 24, right: 24 } },
+      props: { padding: { top: padding, bottom: padding, left: 24, right: 24 } },
       child: column,
     },
     props.layout as Record<string, unknown> | undefined,
@@ -731,9 +826,19 @@ function transformCard(block: Record<string, unknown>, rootProps: Record<string,
   const title = props.title as string;
   const description = props.description as string;
   const image = props.image as Record<string, unknown> | undefined;
-  const variant = (props.variant as string) || "default";
+  const mode = (props.mode as string) || (props.variant as string) || "card";
 
   const cardChildren: Record<string, unknown>[] = [];
+
+  if (props.icon) {
+    const iconColor = resolveColor(props.colorMode as string, props.colorTheme as string, props.colorFixed as string, rootProps) || "#2563eb";
+    cardChildren.push({
+      id: generateId("card-icon"),
+      type: "icon",
+      props: { name: resolveIcon(props.icon as string), size: 32, color: iconColor },
+    });
+  }
+
   if (image?.url) {
     cardChildren.push({
       id: generateId("card-img"),
@@ -756,8 +861,13 @@ function transformCard(block: Record<string, unknown>, rootProps: Record<string,
     });
   }
 
-  const elevationMap: Record<string, number> = { default: 1, outlined: 0, elevated: 4 };
-  const cardOutProps: Record<string, unknown> = { elevation: elevationMap[variant] || 1, borderRadius: 12 };
+  const elevationMap: Record<string, number> = { flat: 0, card: 2, default: 1, outlined: 0, elevated: 4 };
+  let elevation = elevationMap[mode] ?? 2;
+  if (typeof props.elevation === "number") elevation = props.elevation;
+  const cardOutProps: Record<string, unknown> = { elevation, borderRadius: 8 };
+  if (typeof props.padding === "number") {
+    cardOutProps.padding = props.padding;
+  }
 
   const color = resolveColor(props.colorMode as string, props.colorTheme as string, props.colorFixed as string, rootProps);
   if (color) cardOutProps.color = color;
@@ -769,7 +879,7 @@ function transformCard(block: Record<string, unknown>, rootProps: Record<string,
     child: {
       id: generateId("card-body"),
       type: "column",
-      props: { gap: 8, crossAxis: "start" },
+      props: flexProps("start", "start", { gap: 8, padding: 16 }),
       children: cardChildren,
     },
   };
@@ -779,7 +889,8 @@ function transformCard(block: Record<string, unknown>, rootProps: Record<string,
 function transformBadge(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
   const lang = (rootProps.language as string) || "ar";
-  const label = resolveBilingual(props.label as string, props.labelAr as string, lang);
+  const label = resolveBilingual(props.label as string, props.labelAr as string, lang)
+    || (props.text as string) || "";
   const variant = (props.variant as string) || "discount";
 
   const badgeColors: Record<string, { bg: string; fg: string }> = {
@@ -795,7 +906,7 @@ function transformBadge(block: Record<string, unknown>, rootProps: Record<string
   const node: Record<string, unknown> = {
     id: generateId("badge"),
     type: "container",
-    style: { padding: { left: 8, right: 8, top: 4, bottom: 4 }, color: bc.bg, borderRadius: 9999 },
+    props: { padding: { left: 8, right: 8, top: 4, bottom: 4 }, color: bc.bg, borderRadius: 9999 },
     child: {
       id: generateId("badge-label"),
       type: "text",
@@ -813,17 +924,17 @@ function transformDivider(block: Record<string, unknown>, rootProps: Record<stri
   const color = resolveColor(props.colorMode as string, props.colorTheme as string, props.colorFixed as string, rootProps);
 
   if (orient === "vertical") {
-    const style: Record<string, unknown> = { width: 1 };
+    const dividerProps: Record<string, unknown> = { width: 1, color: color || "#cbd5e1" };
     const w = props.width as string;
-    if (w) style.width = parsePx(w);
+    if (w) dividerProps.width = parsePx(w);
     const h = props.height as string;
-    if (h) style.height = parsePx(h);
+    if (h) dividerProps.height = parsePx(h);
 
     return applyLayout(
       {
         id: generateId("v-divider"),
         type: "container",
-        style: { ...style, color: color || "#cbd5e1" },
+        props: dividerProps,
       },
       props.layout as Record<string, unknown> | undefined,
       rootProps
@@ -838,7 +949,7 @@ function transformDivider(block: Record<string, unknown>, rootProps: Record<stri
   if (color) (node.props as Record<string, unknown>).color = color;
 
   const w = props.width as string;
-  if (w && w !== "100%") node.style = { width: parsePx(w) };
+  if (w && w !== "100%") (node.props as Record<string, unknown>).width = parsePx(w);
 
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
@@ -859,46 +970,164 @@ function transformSection(block: Record<string, unknown>, rootProps: Record<stri
   const paddingTop = parsePx(props.paddingTop as string, 0);
   const paddingBottom = parsePx(props.paddingBottom as string, 0);
   const padH = parsePx(props.paddingHorizontal as string, 16);
+  const bgImage = (props.backgroundImage as string) || "";
+  const bgColor = (props.backgroundColor as string) || undefined;
+  const columnsMobile = parseInt(String(props.columnsMobile || props.columns || 1), 10);
+  const gridGap = parsePx(props.gridGap as string, 16);
 
-  const container: Record<string, unknown> = {
-    id: generateId("section-container"),
-    type: "container",
-    style: {
-      color: (props.backgroundColor as string) || undefined,
-      padding: { top: paddingTop, bottom: paddingBottom, left: padH, right: padH },
-    },
-    child: {
+  const transformedChildren = children.map((c: Record<string, unknown>) => transformBlock(c, rootProps)).filter(Boolean) as Record<string, unknown>[];
+
+  let contentWrapper: Record<string, unknown>;
+  if (columnsMobile > 1) {
+    contentWrapper = {
+      id: generateId("section-grid"),
+      type: "gridView",
+      props: {
+        crossAxisCount: columnsMobile,
+        mainAxisSpacing: gridGap,
+        crossAxisSpacing: gridGap,
+        childAspectRatio: 1.0,
+      },
+      children: transformedChildren,
+    };
+  } else {
+    contentWrapper = {
       id: generateId("section-column"),
       type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap: 16 },
-      children: children.map((c: Record<string, unknown>) => transformBlock(c, rootProps)).filter(Boolean),
+      props: flexProps("start", "stretch", { gap: 16 }),
+      children: transformedChildren,
+    };
+  }
+
+  const innerContainer: Record<string, unknown> = {
+    id: generateId("section-inner"),
+    type: "container",
+    props: {
+      ...(bgColor && !bgImage ? { color: bgColor } : {}),
+      padding: { top: paddingTop, bottom: paddingBottom, left: padH, right: padH },
     },
+    child: contentWrapper,
+  };
+
+  if (bgImage) {
+    const stackChildren: Record<string, unknown>[] = [
+      {
+        id: generateId("section-bg-image"),
+        type: "image",
+        props: { url: bgImage, source: "network", fit: "cover" },
+      },
+    ];
+    if (props.backgroundOverlayColor) {
+      stackChildren.push({
+        id: generateId("section-overlay"),
+        type: "container",
+        props: { color: props.backgroundOverlayColor as string },
+      });
+    }
+    stackChildren.push(innerContainer);
+    return applyLayout(
+      {
+        id: generateId("section-stack"),
+        type: "stack",
+        props: { fit: "loose" },
+        children: stackChildren,
+      },
+      props.layout as Record<string, unknown> | undefined,
+      rootProps
+    );
+  }
+
+  const container: Record<string, unknown> = {
+    ...innerContainer,
+    id: generateId("section-container"),
   };
 
   return applyLayout(container, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
+function wrapWithSurfaceContainer(
+  node: Record<string, unknown>,
+  props: Record<string, unknown>,
+  rootProps: Record<string, unknown>
+): Record<string, unknown> {
+  const bgColor = (props.backgroundColor as string) || "";
+  const padding = props.padding as string;
+  const borderRadius = props.borderRadius as string;
+  const boxShadow = (props.boxShadow as string) || "none";
+  const bgImage = (props.backgroundImage as string) || "";
+
+  const hasSurface =
+    (bgColor && bgColor !== "") ||
+    (padding && padding !== "0px") ||
+    (borderRadius && borderRadius !== "theme-none" && borderRadius !== "0") ||
+    (boxShadow && boxShadow !== "none") ||
+    (bgImage && bgImage !== "");
+
+  if (!hasSurface) return node;
+
+  const containerProps: Record<string, unknown> = {};
+  if (bgColor) containerProps.color = resolveThemeColor(bgColor, rootProps) || bgColor;
+  if (padding && padding !== "0px") {
+    const p = parsePx(padding);
+    containerProps.padding = { top: p, bottom: p, left: p, right: p };
+  }
+  if (borderRadius) {
+    containerProps.borderRadius = borderRadius.startsWith("theme-")
+      ? resolveThemePx(borderRadius, rootProps, 0)
+      : parsePx(borderRadius, 0);
+  }
+  if (boxShadow && boxShadow !== "none") containerProps.shadow = boxShadow;
+
+  if (bgImage) {
+    return {
+      id: generateId("group-surface-stack"),
+      type: "stack",
+      props: { fit: "loose" },
+      children: [
+        { id: generateId("group-bg"), type: "image", props: { url: bgImage, source: "network", fit: "cover" } },
+        { id: generateId("group-surface"), type: "container", props: containerProps, child: node },
+      ],
+    };
+  }
+
+  return {
+    id: generateId("group-surface"),
+    type: "container",
+    props: containerProps,
+    child: node,
+  };
+}
+
 function transformFlex(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
   const items = getChildren(block);
-  const direction = (props.direction as string) || "row";
-  const isRow = direction === "row";
+  let direction = (props.direction as string) || "";
+  if (!direction) {
+    const orientation = props.orientation as string;
+    if (orientation === "vertical") direction = "column";
+    else if (orientation === "horizontal") direction = "row";
+    else direction = "row";
+  }
+  const isRow = direction === "row" || direction === "horizontal";
   const gap = parsePx(props.gap as string | number, 0);
 
   const axisMap: Record<string, string> = {
     center: "center", "flex-start": "start", start: "start",
     "flex-end": "end", end: "end", "space-between": "spaceBetween",
     spaceBetween: "spaceBetween", "space-around": "spaceAround", stretch: "stretch",
+    baseline: "baseline",
   };
-  const crossAxis = axisMap[(props.alignItems as string) || ""] || (isRow ? "center" : "stretch");
-  const mainAxis = axisMap[(props.justifyContent as string) || ""] || "start";
+  const crossAxisAlignment = axisMap[(props.alignItems as string) || ""] || (isRow ? "center" : "stretch");
+  const mainAxisAlignment = axisMap[(props.justifyContent as string) || ""] || "start";
 
-  const node: Record<string, unknown> = {
+  let node: Record<string, unknown> = {
     id: generateId(isRow ? "row" : "column"),
     type: isRow ? "row" : "column",
-    props: { mainAxis, crossAxis, gap },
+    props: flexProps(mainAxisAlignment, crossAxisAlignment, { gap }),
     children: items.map((c: Record<string, unknown>) => transformBlock(c, rootProps)),
   };
+
+  node = wrapWithSurfaceContainer(node, props, rootProps);
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
@@ -926,7 +1155,7 @@ function transformLayoutGrid(block: Record<string, unknown>, rootProps: Record<s
     rows.push({
       id: generateId("grid-row"),
       type: "row",
-      props: { mainAxis: "spaceBetween", crossAxis: "stretch", gap },
+      props: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "stretch", gap },
       children: rowItems,
     });
   }
@@ -934,7 +1163,7 @@ function transformLayoutGrid(block: Record<string, unknown>, rootProps: Record<s
   const node: Record<string, unknown> = {
     id: generateId("grid-wrapper"),
     type: "column",
-    props: { crossAxis: "stretch", mainAxis: "start", gap },
+    props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap },
     children: rows,
   };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
@@ -984,8 +1213,8 @@ function buildProductGridItemTemplate(cardVariant: string): Record<string, unkno
     ? [{
         id: generateId("pt-row"),
         type: "row",
-        props: { crossAxis: "start", mainAxis: "start", gap: 12 },
-        children: [imageNode, { id: generateId("pt-info"), type: "column", props: { crossAxis: "start", gap: 4 }, children: textNodes }],
+        props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 12 },
+        children: [imageNode, { id: generateId("pt-info"), type: "column", props: { crossAxisAlignment: "start", gap: 4 }, children: textNodes }],
       }]
     : [imageNode, ...textNodes];
 
@@ -996,7 +1225,7 @@ function buildProductGridItemTemplate(cardVariant: string): Record<string, unkno
     child: {
       id: generateId("pt-body"),
       type: "column",
-      props: { crossAxis: "start", mainAxis: "start", gap: 8 },
+      props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 8 },
       children: bodyChildren,
     },
     tap: { type: "navigate", route: "/product/details/:productId", navigation_type: "push" },
@@ -1069,7 +1298,7 @@ function transformProductCard(block: Record<string, unknown>, rootProps: Record<
     actionButtons.push({
       id: generateId("pc-add-cart"),
       type: "button",
-      props: { label: lang === "ar" ? "أضف للسلة" : "Add to cart", height: 40, variant: (props.actionButtonVariant as string) || "primary" },
+      props: { label: lang === "ar" ? "أضف للسلة" : "Add to cart", height: 40, variant: resolveButtonVariant((props.actionButtonVariant as string) || "primary") },
       tap: { type: "cubitCall", cubit: "cart", method: "addItem", params: { productId: product?.id } },
     });
   }
@@ -1077,7 +1306,7 @@ function transformProductCard(block: Record<string, unknown>, rootProps: Record<
     actionButtons.push({
       id: generateId("pc-view"),
       type: "button",
-      props: { label: lang === "ar" ? "التفاصيل" : "View details", height: 40, variant: "secondary" },
+      props: { label: lang === "ar" ? "التفاصيل" : "View details", height: 40, variant: "outlined" },
       tap: {
         type: "navigate",
         route: product?.id ? `/product/details/${product.id}` : "/product/details/:productId",
@@ -1089,7 +1318,7 @@ function transformProductCard(block: Record<string, unknown>, rootProps: Record<
     actionButtons.push({
       id: generateId("pc-wishlist"),
       type: "button",
-      props: { label: "♥", height: 40, variant: "ghost" },
+      props: { label: "♥", height: 40, variant: "text" },
       tap: { type: "navigate", route: "/wishlist", navigation_type: "push" },
     });
   }
@@ -1098,7 +1327,7 @@ function transformProductCard(block: Record<string, unknown>, rootProps: Record<
     textChildren.push({
       id: generateId("pc-actions"),
       type: "row",
-      props: { mainAxis: "start", crossAxis: "center", gap: 8 },
+      props: { mainAxisAlignment: "start", crossAxisAlignment: "center", gap: 8 },
       children: actionButtons,
     });
   }
@@ -1107,10 +1336,10 @@ function transformProductCard(block: Record<string, unknown>, rootProps: Record<
     ? [{
         id: generateId("pc-row"),
         type: "row",
-        props: { crossAxis: "start", mainAxis: "start", gap: 12 },
+        props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 12 },
         children: [
           { ...imageNode, props: { ...imageNode.props, width: 120, height: 120 } },
-          { id: generateId("pc-info"), type: "column", props: { crossAxis: "start", mainAxis: "start", gap: 4 }, children: textChildren },
+          { id: generateId("pc-info"), type: "column", props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 4 }, children: textChildren },
         ],
       }]
     : [imageNode, ...textChildren];
@@ -1122,7 +1351,7 @@ function transformProductCard(block: Record<string, unknown>, rootProps: Record<
     child: {
       id: generateId("pc-body"),
       type: "column",
-      props: { crossAxis: "start", mainAxis: "start", gap: 8 },
+      props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 8 },
       children: cardChildren,
     },
     tap: {
@@ -1137,15 +1366,26 @@ function transformProductCard(block: Record<string, unknown>, rootProps: Record<
 
 function transformProductGrid(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
-  const columns = parseInt((props.columns as string) || "3", 10);
+  const columns = parseInt(String(props.columns || "3"), 10);
   const gap = resolveGridGap(props.gap as string | number);
   const maxProducts = parseInt(
     (props.maxProducts as string) || (props.maxRows as string) || "6",
     10
   );
-  const collection = (props.collection as string) || "all";
+  const collectionRaw = props.collection;
+  const collection =
+    typeof collectionRaw === "object" && collectionRaw !== null
+      ? (collectionRaw as Record<string, unknown>).id as string
+      : (collectionRaw as string) || "all";
+  const metadata = props.metadata as Record<string, unknown> | undefined;
   const cardVariant = (props.cardVariant as string) || (props.variant as string) || "vertical";
   const requestKey = "product-list";
+
+  let requestUrl = buildCollectionRequestUrl(collection, maxProducts);
+  if (metadata?.apiUrl) {
+    const normalized = normalizeAdminApiUrl(metadata.apiUrl as string);
+    requestUrl = normalized.startsWith("/") ? normalized : `/api/v1/public${normalized}`;
+  }
 
   return {
     id: generateId("products-grid"),
@@ -1155,15 +1395,10 @@ function transformProductGrid(block: Record<string, unknown>, rootProps: Record<
       mainAxisSpacing: gap,
       crossAxisSpacing: gap,
       enableInnerScroll: false,
-      data: {
-        source: "collection",
-        id: "products-grid",
-        requestKey,
-        requestUrl: buildCollectionRequestUrl(collection, maxProducts),
-        page: 0,
-        size: Math.min(maxProducts, 20),
-        ...(collection && collection !== "all" ? { collection } : {}),
-      },
+      requestKey,
+      requestUrl,
+      emptyMessage: "لا توجد منتجات",
+      errorMessage: "حدث خطأ",
     },
     itemBuilder: {
       type: "repeat",
@@ -1202,7 +1437,7 @@ function transformProductCarousel(block: Record<string, unknown>, rootProps: Rec
         child: {
           id: generateId("carousel-body"),
           type: "column",
-          props: { crossAxis: "start", mainAxis: "start", gap: 4 },
+          props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 4 },
           children: [
             { id: generateId("carousel-img"), type: "image", props: { urlPath: "item.image", source: "network", fit: "cover", width: 160, height: 160, borderRadius: "md" } },
             { id: generateId("carousel-name"), type: "text", props: { valuePath: "item.name", fontSize: 12, fontWeight: "bold" } },
@@ -1219,7 +1454,7 @@ function transformProductDetails(block: Record<string, unknown>, rootProps: Reco
   const node: Record<string, unknown> = {
     id: generateId("product-detail"),
     type: "column",
-    props: { crossAxis: "stretch", mainAxis: "start", gap: 16 },
+    props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 16 },
     children: [
       {
         id: generateId("pd-image"),
@@ -1240,7 +1475,7 @@ function transformProductDetails(block: Record<string, unknown>, rootProps: Reco
       {
         id: generateId("pd-add-cart"),
         type: "button",
-        props: { label: "أضف إلى السلة", height: 48, variant: "primary", fullWidth: true },
+        props: { label: "أضف إلى السلة", height: 48, variant: "elevated", fullWidth: true },
         tap: { type: "cubitCall", cubit: "cart", method: "addItem" },
       },
     ],
@@ -1273,7 +1508,7 @@ function transformCartSection(block: Record<string, unknown>, rootProps: Record<
         child: {
           id: generateId("cl-row"),
           type: "row",
-          props: { crossAxis: "center", mainAxis: "spaceBetween", gap: 12 },
+          props: { crossAxisAlignment: "center", mainAxisAlignment: "spaceBetween", gap: 12 },
           children: [
             { id: generateId("cl-image"), type: "image", props: { urlPath: "item.image", source: "network", fit: "cover", width: 60, height: 60, borderRadius: "sm" } },
             { id: generateId("cl-name"), type: "text", props: { valuePath: "item.name", fontSize: 14 } },
@@ -1288,7 +1523,7 @@ function transformCartSection(block: Record<string, unknown>, rootProps: Record<
   const node: Record<string, unknown> = {
     id: generateId("cart-section"),
     type: "column",
-    props: { crossAxis: "stretch", mainAxis: "start", gap: 16 },
+    props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 16 },
     children,
   };
   return applyLayout(node, (block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
@@ -1302,7 +1537,7 @@ function transformCartSummary(block: Record<string, unknown>, rootProps: Record<
     child: {
       id: generateId("cs-body"),
       type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap: 12 },
+      props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 12 },
       children: [
         { id: generateId("cs-subtotal"), type: "text", props: { valuePath: "cart.subtotal", fontSize: 16, fontWeight: "bold" } },
         { id: generateId("cs-shipping"), type: "text", props: { valuePath: "cart.shipping", fontSize: 14, color: "#6b7d93" } },
@@ -1313,7 +1548,28 @@ function transformCartSummary(block: Record<string, unknown>, rootProps: Record<
   return applyLayout(node, (block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
 }
 
-function transformCheckoutForm(_block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+function transformCheckoutForm(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const lang = (rootProps.language as string) || "ar";
+  const fields = (props.fields as Record<string, unknown>[]) || [
+    { name: "name", label: "الاسم الكامل", hint: "أدخل اسمك" },
+    { name: "phone", label: "رقم الهاتف", hint: "09XXXXXXXX" },
+    { name: "address", label: "العنوان", hint: "المدينة، الشارع" },
+  ];
+  const submissionAction = props.submissionAction as Record<string, unknown> | undefined;
+
+  const fieldNodes = fields.map((field) => ({
+    id: generateId("cf-field"),
+    type: "textFormField",
+    props: {
+      label: (field.label as string) || "",
+      hint: (field.placeholder as string) || "",
+      name: (field.name as string) || "",
+      textDirection: (field.type as string) === "email" || (field.name as string) === "phone" ? "ltr" : "rtl",
+      ...((field.required as boolean) ? { validator: "required" } : {}),
+    },
+  }));
+
   const node: Record<string, unknown> = {
     id: generateId("checkout-form"),
     type: "form",
@@ -1321,21 +1577,30 @@ function transformCheckoutForm(_block: Record<string, unknown>, rootProps: Recor
     child: {
       id: generateId("cf-fields"),
       type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap: 16 },
+      props: flexProps("start", "stretch", { gap: 16 }),
       children: [
-        { id: generateId("cf-name"), type: "textFormField", props: { label: "الاسم الكامل", hint: "أدخل اسمك", textDirection: "rtl" } },
-        { id: generateId("cf-phone"), type: "textFormField", props: { label: "رقم الهاتف", hint: "09XXXXXXXX", textDirection: "ltr", keyboardType: "phone" } },
-        { id: generateId("cf-address"), type: "textFormField", props: { label: "العنوان", hint: "المدينة، الشارع", textDirection: "rtl" } },
+        ...fieldNodes,
         {
           id: generateId("cf-submit"),
           type: "button",
-          props: { label: "متابعة", height: 48, variant: "primary", fullWidth: true },
-          tap: { type: "cubitCall", cubit: "checkout", method: "saveAddress", requireValidForm: true, formId: "checkout-address-form" },
+          props: {
+            label: (props.submitLabel as string) || "متابعة",
+            height: 48,
+            variant: "elevated",
+            fullWidth: true,
+          },
+          tap: submissionAction || {
+            type: "cubitCall",
+            cubit: "checkout",
+            method: "saveAddress",
+            requireValidForm: true,
+            formId: "checkout-address-form",
+          },
         },
       ],
     },
   };
-  return applyLayout(node, (_block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
 function transformCheckoutSummary(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
@@ -1346,7 +1611,7 @@ function transformCheckoutSummary(block: Record<string, unknown>, rootProps: Rec
     child: {
       id: generateId("cos-body"),
       type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap: 12 },
+      props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 12 },
       children: [
         { id: generateId("cos-subtotal"), type: "text", props: { valuePath: "checkout.draft.subtotal", fontSize: 16, fontWeight: "bold" } },
         { id: generateId("cos-shipping"), type: "text", props: { valuePath: "checkout.draft.shipping", fontSize: 14 } },
@@ -1381,7 +1646,7 @@ function transformOrderList(block: Record<string, unknown>, rootProps: Record<st
         child: {
           id: generateId("oi-body"),
           type: "row",
-          props: { crossAxis: "center", mainAxis: "spaceBetween", gap: 12 },
+          props: { crossAxisAlignment: "center", mainAxisAlignment: "spaceBetween", gap: 12 },
           children: [
             { id: generateId("oi-number"), type: "text", props: { valuePath: "item.orderNumber", fontSize: 14, fontWeight: "bold" } },
             { id: generateId("oi-status"), type: "text", props: { valuePath: "item.status", fontSize: 12 } },
@@ -1398,7 +1663,7 @@ function transformOrderDetails(block: Record<string, unknown>, rootProps: Record
   const node: Record<string, unknown> = {
     id: generateId("order-detail"),
     type: "column",
-    props: { crossAxis: "stretch", mainAxis: "start", gap: 16 },
+    props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 16 },
     children: [
       { id: generateId("od-number"), type: "text", props: { valuePath: "dataContext.requests.order-detail.data.orderNumber", fontSize: 18, fontWeight: "bold" } },
       { id: generateId("od-status"), type: "text", props: { valuePath: "dataContext.requests.order-detail.data.status", fontSize: 14 } },
@@ -1479,7 +1744,7 @@ function buildTestimonialCardFromItem(
     child: {
       id: generateId("tm-body"),
       type: "column",
-      props: { crossAxis: "start", mainAxis: "start", gap: 8 },
+      props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 8 },
       children,
     },
   };
@@ -1542,7 +1807,7 @@ function transformTestimonials(block: Record<string, unknown>, rootProps: Record
     rows.push({
       id: generateId("tm-row"),
       type: "row",
-      props: { mainAxis: "spaceBetween", crossAxis: "stretch", gap },
+      props: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "stretch", gap },
       children: rowItems,
     });
   }
@@ -1551,7 +1816,7 @@ function transformTestimonials(block: Record<string, unknown>, rootProps: Record
     {
       id: generateId("testimonials-grid"),
       type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap },
+      props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap },
       children: rows,
     },
     props.layout as Record<string, unknown> | undefined,
@@ -1582,16 +1847,26 @@ function transformImageGallery(block: Record<string, unknown>, rootProps: Record
   }));
 
   if (mode === "slider") {
+    const intervalMs = props.autoplayDuration
+      ? (String(props.autoplayDuration).startsWith("theme-5") ? 5000 : parsePx(props.autoplayDuration as string, 5) * 1000)
+      : 5000;
     return applyLayout(
       {
         id: generateId("gallery-slider"),
         type: "imageSlider",
         props: {
-          autoPlay: props.autoplay !== false,
-          autoPlayIntervalMs: resolveThemePx(props.autoplayDuration as string, rootProps, 4000),
-          showArrows: props.showArrows !== false,
+          images: images.map((img) => ({
+            url: (img.src as string) || (img.url as string) || "",
+            alt: (img.alt as string) || "",
+          })),
+          aspectRatio: aspect ?? 1.777,
+          fit: objectFit,
+          borderRadius: radius,
+          autoPlay: props.autoplay === true || props.autoplay === "on",
+          intervalMs,
+          showIndicators: true,
+          indicatorStyle: "dot",
         },
-        children: imageNodes,
       },
       props.layout as Record<string, unknown> | undefined,
       rootProps
@@ -1599,32 +1874,22 @@ function transformImageGallery(block: Record<string, unknown>, rootProps: Record
   }
 
   const cols = parseInt(String(props.gridColumns || 3), 10);
+  const gapSpacing = gap;
   const maxRows = parseInt(String(props.gridRows || 0), 10);
   let displayImages = imageNodes;
   if (maxRows > 0) displayImages = imageNodes.slice(0, cols * maxRows);
 
-  const rows: Record<string, unknown>[] = [];
-  for (let i = 0; i < displayImages.length; i += cols) {
-    const rowItems = displayImages.slice(i, i + cols).map((item) => ({
-      id: generateId("gallery-cell"),
-      type: "container",
-      props: { expand: true, expandAxis: "horizontal" },
-      child: item,
-    }));
-    rows.push({
-      id: generateId("gallery-row"),
-      type: "row",
-      props: { mainAxis: "spaceBetween", crossAxis: "stretch", gap },
-      children: rowItems,
-    });
-  }
-
   return applyLayout(
     {
       id: generateId("gallery-grid"),
-      type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap },
-      children: rows,
+      type: "gridView",
+      props: {
+        crossAxisCount: cols,
+        mainAxisSpacing: gapSpacing,
+        crossAxisSpacing: gapSpacing,
+        childAspectRatio: aspect ?? 1.0,
+      },
+      children: displayImages,
     },
     props.layout as Record<string, unknown> | undefined,
     rootProps
@@ -1651,23 +1916,48 @@ function transformAccordion(block: Record<string, unknown>, rootProps: Record<st
     });
   }
 
+  const variant = (props.variant as string) || "soft";
+  const variantStyles: Record<string, Record<string, unknown>> = {
+    soft: { backgroundColor: "#f8fafc", borderRadius: 8, showDivider: true },
+    outline: { showDivider: true },
+    minimal: { showDivider: false },
+  };
+  const tileStyle = variantStyles[variant] || variantStyles.soft;
+
   for (const item of items) {
-    children.push({
+    let tile: Record<string, unknown> = {
       id: generateId("accordion-item"),
       type: "expansionTile",
-      props: { title: item.title as string, initiallyExpanded: item.open === true },
-      child: {
-        id: generateId("accordion-body"),
-        type: "text",
-        props: { value: (item.body as string) || "" },
+      props: {
+        title: item.title as string,
+        initiallyExpanded: item.open === true,
+        ...tileStyle,
       },
-    });
+      children: [
+        {
+          id: generateId("accordion-body"),
+          type: "text",
+          props: { value: (item.body as string) || "", fontSize: 14 },
+        },
+      ],
+    };
+
+    if (variant === "outline") {
+      tile = {
+        id: generateId("accordion-outline-wrap"),
+        type: "container",
+        props: { border: { width: 1, color: "#e2e8f0" }, borderRadius: 8 },
+        child: tile,
+      };
+    }
+
+    children.push(tile);
   }
 
   const node: Record<string, unknown> = {
     id: generateId("accordion"),
     type: "column",
-    props: { crossAxis: "stretch", mainAxis: "start", gap: 8 },
+    props: flexProps("start", "stretch", { gap: 0 }),
     children,
   };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
@@ -1720,7 +2010,7 @@ function transformProductInfo(block: Record<string, unknown>, rootProps: Record<
   const node: Record<string, unknown> = {
     id: generateId("product-info"),
     type: "column",
-    props: { crossAxis: "stretch", mainAxis: "start", gap: 8 },
+    props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 8 },
     children,
   };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
@@ -1740,7 +2030,7 @@ function transformWishlist(block: Record<string, unknown>, rootProps: Record<str
     col.push({
       id: generateId("wl-add-cart"),
       type: "button",
-      props: { label: (props.ctaLabel as string) || (lang === "ar" ? "أضف للسلة" : "Add to cart"), height: 40, variant: "primary" },
+      props: { label: (props.ctaLabel as string) || (lang === "ar" ? "أضف للسلة" : "Add to cart"), height: 40, variant: "elevated" },
       tap: { type: "cubitCall", cubit: "cart", method: "addItem" },
     });
   }
@@ -1844,7 +2134,7 @@ function transformTestimonialCard(block: Record<string, unknown>, rootProps: Rec
     child: {
       id: generateId("tm-body"),
       type: "column",
-      props: { crossAxis: "start", mainAxis: "start", gap: 8 },
+      props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 8 },
       children,
     },
   };
@@ -1878,7 +2168,7 @@ function transformTestimonialGrid(block: Record<string, unknown>, rootProps: Rec
     rows.push({
       id: generateId("tgrid-row"),
       type: "row",
-      props: { mainAxis: "spaceBetween", crossAxis: "stretch", gap },
+      props: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "stretch", gap },
       children: rowItems,
     });
   }
@@ -1886,7 +2176,7 @@ function transformTestimonialGrid(block: Record<string, unknown>, rootProps: Rec
   const node: Record<string, unknown> = {
     id: generateId("testimonial-grid"),
     type: "column",
-    props: { crossAxis: "stretch", mainAxis: "start", gap },
+    props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap },
     children: rows,
   };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
@@ -1935,7 +2225,7 @@ function transformCountdown(block: Record<string, unknown>, rootProps: Record<st
   const unitNodes = units.map((unit) => ({
     id: generateId(`cd-${unit.key}`),
     type: "column",
-    props: { crossAxis: "center", mainAxis: "center", gap: 4 },
+    props: { crossAxisAlignment: "center", mainAxisAlignment: "center", gap: 4 },
     children: [
       { id: generateId(`cd-${unit.key}-val`), type: "timer", props: { durationMs: 0 } },
       { id: generateId(`cd-${unit.key}-lbl`), type: "text", props: { value: resolveBilingual(unit.label, unit.labelAr, lang), fontSize: 12, color: "#6b7d93" } },
@@ -1945,14 +2235,14 @@ function transformCountdown(block: Record<string, unknown>, rootProps: Record<st
   children.push({
     id: generateId("cd-units"),
     type: "row",
-    props: { mainAxis: "center", crossAxis: "center", gap: 16 },
+    props: { mainAxisAlignment: "center", crossAxisAlignment: "center", gap: 16 },
     children: unitNodes,
   });
 
   const node: Record<string, unknown> = {
     id: generateId("countdown"),
     type: "column",
-    props: { crossAxis: "center", mainAxis: "center", gap: 12 },
+    props: { crossAxisAlignment: "center", mainAxisAlignment: "center", gap: 12 },
     children,
   };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
@@ -1968,20 +2258,20 @@ function transformCookieConsent(block: Record<string, unknown>, rootProps: Recor
   const node: Record<string, unknown> = {
     id: generateId("cookie-consent"),
     type: "container",
-    style: { color: "#1f2937", padding: { top: 16, bottom: 16, left: 16, right: 16 } },
+    props: { color: "#1f2937", padding: { top: 16, bottom: 16, left: 16, right: 16 } },
     child: {
       id: generateId("cc-body"),
       type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap: 12 },
+      props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 12 },
       children: [
         { id: generateId("cc-message"), type: "text", props: { value: message, fontSize: 14, color: "#ffffff" } },
         {
           id: generateId("cc-buttons"),
           type: "row",
-          props: { mainAxis: "end", crossAxis: "center", gap: 12 },
+          props: { mainAxisAlignment: "end", crossAxisAlignment: "center", gap: 12 },
           children: [
-            { id: generateId("cc-decline"), type: "button", props: { label: declineLabel, height: 36, variant: "outline" } },
-            { id: generateId("cc-accept"), type: "button", props: { label: acceptLabel, height: 36, variant: "primary" } },
+            { id: generateId("cc-decline"), type: "button", props: { label: declineLabel, height: 36, variant: "outlined" } },
+            { id: generateId("cc-accept"), type: "button", props: { label: acceptLabel, height: 36, variant: "elevated" } },
           ],
         },
       ],
@@ -1998,7 +2288,7 @@ function transformSearchModal(block: Record<string, unknown>, rootProps: Record<
   const node: Record<string, unknown> = {
     id: generateId("search-btn"),
     type: "button",
-    props: { label: placeholder, icon: "search", height: 48, variant: "outline", fullWidth: true },
+    props: { label: placeholder, icon: "search", height: 48, variant: "outlined", fullWidth: true },
     tap: { type: "navigate", route: "/search", navigation_type: "push" },
   };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
@@ -2022,6 +2312,171 @@ function transformLogo(block: Record<string, unknown>, rootProps: Record<string,
     },
   };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+// ─── Legacy / Gap Block Transformers ─────────────────────────────────────────
+
+function transformLogos(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const logos = (props.logos as Record<string, unknown>[]) || [];
+
+  const node: Record<string, unknown> = {
+    id: generateId("logos-list"),
+    type: "listView",
+    props: { scrollDirection: "horizontal", height: 60 },
+    children: logos.map((logo) => ({
+      id: generateId("logo"),
+      type: "image",
+      props: {
+        url: (logo.src as string) || (logo.url as string) || "",
+        source: "network",
+        height: 48,
+        fit: "contain",
+        alt: (logo.alt as string) || "",
+      },
+    })),
+  };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformStats(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const items = (props.items as Record<string, unknown>[]) || [];
+
+  const node: Record<string, unknown> = {
+    id: generateId("stats-row"),
+    type: "row",
+    props: flexProps("spaceAround", "center"),
+    children: items.map((item) => ({
+      id: generateId("stat-col"),
+      type: "column",
+      props: flexProps("start", "center", { gap: 4 }),
+      children: [
+        {
+          id: generateId("stat-value"),
+          type: "text",
+          props: { value: (item.title as string) || (item.value as string) || "", fontSize: 22, fontWeight: "bold" },
+        },
+        {
+          id: generateId("stat-label"),
+          type: "text",
+          props: { value: (item.description as string) || (item.label as string) || "", fontSize: 14 },
+        },
+      ],
+    })),
+  };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformContactForm(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const lang = (rootProps.language as string) || "ar";
+  const formId = (props.id as string) || "contact-form";
+  const fields = (props.fields as Record<string, unknown>[]) || [
+    { name: "name", label: lang === "ar" ? "الاسم" : "Name" },
+    { name: "email", label: lang === "ar" ? "البريد الإلكتروني" : "Email" },
+    { name: "message", label: lang === "ar" ? "الرسالة" : "Message" },
+  ];
+
+  const fieldNodes = fields.map((field) => ({
+    id: generateId("contact-field"),
+    type: "textFormField",
+    props: {
+      label: (field.label as string) || "",
+      hint: (field.placeholder as string) || "",
+      name: (field.name as string) || "",
+      textDirection: (field.name as string) === "email" ? "ltr" : ((rootProps.direction as string) === "rtl" ? "rtl" : "ltr"),
+    },
+  }));
+
+  const node: Record<string, unknown> = {
+    id: generateId("contact-form"),
+    type: "form",
+    props: { id: formId },
+    child: {
+      id: generateId("contact-col"),
+      type: "column",
+      props: flexProps("start", "stretch", { gap: 16 }),
+      children: [
+        ...fieldNodes,
+        {
+          id: generateId("contact-submit"),
+          type: "button",
+          props: {
+            label: resolveBilingual(props.submitLabel as string, props.submitLabelAr as string, lang) || (lang === "ar" ? "إرسال" : "Submit"),
+            height: 48,
+            variant: "elevated",
+            fullWidth: true,
+          },
+          tap: {
+            type: "apiCall",
+            method: "POST",
+            url: (props.submitUrl as string) || "/api/v1/public/contact",
+            requireValidForm: true,
+            formId,
+          },
+        },
+      ],
+    },
+  };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformNavMenu(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const items = (props.items as Record<string, unknown>[]) || (props.links as Record<string, unknown>[]) || [];
+  const lang = (rootProps.language as string) || "ar";
+
+  const node: Record<string, unknown> = {
+    id: generateId("nav-menu"),
+    type: "column",
+    props: flexProps("start", "stretch", { gap: 0 }),
+    children: items.map((item) => {
+      const linkProps = { link: item.link, href: item.href, pageId: item.pageId };
+      const tap = resolveLayoutTap(linkProps as Record<string, unknown>, rootProps);
+      return {
+        id: generateId("nav-link"),
+        type: "button",
+        props: {
+          label: resolveBilingual(item.label as string, item.labelAr as string, lang),
+          variant: "text",
+          fullWidth: true,
+        },
+        ...(tap ? { tap } : {}),
+      };
+    }),
+  };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformSidebar(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  if (props.dock) addWarning("Sidebar dock prop is ignored on mobile; rendered as inline column");
+
+  const children = getChildren(block);
+  const node: Record<string, unknown> = {
+    id: generateId("sidebar"),
+    type: "column",
+    props: flexProps("start", "stretch", { gap: 16 }),
+    children: children.map((c) => transformBlock(c, rootProps)).filter(Boolean),
+  };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformTemplate(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> | null {
+  const children = getChildren(block)
+    .map((c) => transformBlock(c, rootProps))
+    .filter(Boolean) as Record<string, unknown>[];
+
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0];
+
+  return {
+    id: generateId("template-flat"),
+    type: "column",
+    props: flexProps("start", "stretch", { gap: 8 }),
+    children,
+  };
 }
 
 // ─── Block Dispatcher ───────────────────────────────────────────────────────
@@ -2060,6 +2515,12 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
     case "Accordion": return transformAccordion(block, rootProps);
     case "Blank": return transformBlank(block, rootProps);
     case "ImageGallery": return transformImageGallery(block, rootProps);
+    case "Logos": return transformLogos(block, rootProps);
+    case "Stats": return transformStats(block, rootProps);
+    case "ContactForm": return transformContactForm(block, rootProps);
+    case "NavMenu": return transformNavMenu(block, rootProps);
+    case "Sidebar": return transformSidebar(block, rootProps);
+    case "Template": return transformTemplate(block, rootProps);
 
     // Commerce blocks
     case "ProductImage": return transformProductImage(block, rootProps);
@@ -2112,7 +2573,7 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
           child: {
             id: generateId("unknown-body"),
             type: "column",
-            props: { crossAxis: "stretch", mainAxis: "start", gap: 8 },
+            props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 8 },
             children: children.map((c) => transformBlock(c, rootProps)).filter(Boolean),
           },
         };
@@ -2284,7 +2745,7 @@ function buildFooter(rootProps: Record<string, unknown>): Record<string, unknown
     const linkNodes = links.map((link) => ({
       id: generateId("footer-link"),
       type: "button",
-      props: { label: resolveBilingual(link.label as string, (link as Record<string, unknown>).labelAr as string, lang), height: 32, variant: "ghost" },
+      props: { label: resolveBilingual(link.label as string, (link as Record<string, unknown>).labelAr as string, lang), height: 32, variant: "text" },
       tap: { type: "navigate", route: normalizeRoute((link.href as string) || "/"), navigation_type: "push" },
     }));
 
@@ -2292,7 +2753,7 @@ function buildFooter(rootProps: Record<string, unknown>): Record<string, unknown
       children.push({
         id: generateId("footer-col"),
         type: "column",
-        props: { crossAxis: "start", mainAxis: "start", gap: 4 },
+        props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 4 },
         children: [
           { id: generateId("footer-col-title"), type: "text", props: { value: title, fontSize: 14, fontWeight: "bold", color: fg } },
           ...linkNodes,
@@ -2306,11 +2767,11 @@ function buildFooter(rootProps: Record<string, unknown>): Record<string, unknown
   return {
     id: generateId("footer"),
     type: "container",
-    style: { color: bg, padding: { top: 24, bottom: 24, left: 16, right: 16 } },
+    props: { color: bg, padding: { top: 24, bottom: 24, left: 16, right: 16 } },
     child: {
       id: generateId("footer-body"),
       type: "column",
-      props: { crossAxis: "stretch", mainAxis: "start", gap: 16 },
+      props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 16 },
       children,
     },
   };

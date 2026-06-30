@@ -87,7 +87,7 @@ Web blocks use `colorMode`, `colorTheme`, `colorFixed`.
 |-----|--------|
 | `colorMode: "theme"` + `colorTheme: "primary"` | `props.color: theme.colors.primary` (resolved hex at convert time) |
 | `colorMode: "fixed"` + `colorFixed: "#..."` | `props.color: "#..."` |
-| Text on colored background | Set `props.color` on `text` for foreground; container `style.color` for background |
+| Text on colored background | Set `props.color` on `text` for foreground; container `props.color` for background |
 
 Resolver reference: web `resolveContentColor(mode, theme, fixed)` → emit literal hex in mobile JSON.
 
@@ -163,13 +163,13 @@ Used by `Button`, `ContentButton`, `NavMenu`, shell blocks, drawers.
 
 ### Button variant / size
 
-| Web `variant` | Mobile `button.props` |
-|---------------|----------------------|
-| `primary` | default filled primary color |
-| `secondary` | `variant: "secondary"` if supported else muted fill |
-| `outline` | `variant: "outline"` |
-| `ghost` | transparent / text button styling via props |
-| `danger` | `color: theme.colors.error` |
+| Web `variant` | Mobile `button.props.variant` |
+|---------------|--------------------------------|
+| `primary` | `"elevated"` |
+| `secondary` | `"outlined"` |
+| `outline` | `"outlined"` |
+| `ghost` | `"text"` |
+| `danger` | `"filled"` + `color: theme.colors.error` (resolved hex) |
 
 | Web `size` | Mobile height from `theme.buttons.{sm,md,lg}` |
 |------------|-----------------------------------------------|
@@ -179,12 +179,15 @@ Used by `Button`, `ContentButton`, `NavMenu`, shell blocks, drawers.
 
 ## YouTube URL
 
-Apply web normalizer logic before mobile output:
+**Hard rule:** YouTube URLs are **NOT** supported by `videoPlayer`. The mobile engine uses the Flutter `video_player` package (MP4/HLS streams only). YouTube iframes are blocked.
 
-- `youtube.com/watch?v=ID` → embed URL for `videoPlayer.url`
-- `youtu.be/ID`, `/shorts/ID` → same
+For any YouTube URL (`youtube.com/watch?v=ID`, `youtu.be/ID`, `/shorts/ID`):
 
-Mobile `videoPlayer` may not support all YouTube embed policies — **fallback:** `openUrl` tap on thumbnail `image`.
+1. Extract `videoId` from the URL
+2. Emit `image` node with `url: "https://img.youtube.com/vi/{videoId}/hqdefault.jpg"`, `source: "network"`, `aspectRatio: 1.777`, `fit: "cover"`
+3. Add node-level `tap: { "type": "openUrl", "url": "<original YouTube URL>" }`
+
+For MP4/HLS direct URLs only, use `videoPlayer` with `props.url`.
 
 ---
 

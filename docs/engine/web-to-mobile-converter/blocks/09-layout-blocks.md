@@ -32,7 +32,7 @@ Web layout blocks ([docs/blocks.md §5.1](../../BLOCKS.md)) → mobile `containe
 
 ```
 container (background + padding)
-  └── column (crossAxis: stretch, mainAxis: start, gap: 16)
+  └── column (crossAxisAlignment: stretch, mainAxisAlignment: start, gap: 16)
         └── children[] (recursive)
 ```
 
@@ -41,12 +41,12 @@ container (background + padding)
 | Web | Mobile |
 |-----|--------|
 | `visible: false` | **Omit** entire section subtree |
-| `backgroundColor` | `container.style.color` (background fill) when no `backgroundImage` |
+| `backgroundColor` | `container.props.color` (background fill) when no `backgroundImage` |
 | `backgroundImage` | `stack`: full-bleed `image` (cover) + content column on top |
 | `backgroundOverlayColor` | semi-transparent `container` layer between image and content |
-| `paddingTop` | `style.padding.top` |
-| `paddingBottom` | `style.padding.bottom` |
-| `paddingHorizontal` | `style.padding.left` + `style.padding.right` |
+| `paddingTop` | `props.padding.top` |
+| `paddingBottom` | `props.padding.bottom` |
+| `paddingHorizontal` | `props.padding.left` + `props.padding.right` |
 | `theme: dark` / `light` | default child text colors on section column |
 | `maxWidth` | **Ignore** on mobile (full bleed + horizontal padding) |
 | `columns` / `columnsMobile` | **Gap:** mobile is single-column flow; use `columnsMobile` as hint for `gridView` chunking inside section only when all children are homogeneous cards |
@@ -55,7 +55,7 @@ container (background + padding)
 | `name` | **Ignore** — editor outline label only |
 | `content[]` | `column.children[]` |
 
-**Fix v0 bug:** use `style.color` for **background**, not text color.
+**Fix v0 bug:** use `props.color` for **background**, not text color. The engine has no `style` wrapper.
 
 ### Layout constraints
 
@@ -84,14 +84,14 @@ container (background + padding)
 {
   "id": "section-container-1",
   "type": "container",
-  "style": {
+  "props": {
     "color": "#F9FAFB",
     "padding": { "top": 32, "bottom": 32, "left": 16, "right": 16 }
   },
   "child": {
     "id": "section-column-2",
     "type": "column",
-    "props": { "crossAxis": "stretch", "mainAxis": "start", "gap": 16 },
+    "props": { "crossAxisAlignment": "stretch", "mainAxisAlignment": "start", "gap": 16 },
     "children": []
   }
 }
@@ -127,14 +127,14 @@ container (background + padding)
 |-----|--------|
 | `items[]` | `children[]` |
 | `gap` | `props.gap` |
-| `justifyContent` | `props.mainAxis` |
-| `alignItems` | `props.crossAxis` |
+| `justifyContent` | `props.mainAxisAlignment` |
+| `alignItems` | `props.crossAxisAlignment` |
 | `wrap: wrap` | **Gap:** use `wrap` not native — split into column of rows or single row with horizontal scroll `listView` if many items |
 
 ### Layout constraints
 
 - Row inside unbounded width: ensure parent has finite width (page column stretch OK)
-- For centered icon rows: `mainAxis: center`, `crossAxis: center`
+- For centered icon rows: `mainAxisAlignment: center`, `crossAxisAlignment: center`
 
 ---
 
@@ -200,10 +200,10 @@ When any surface prop is non-default, wrap the flex node in an outer `container`
 
 | Web | Mobile |
 |-----|--------|
-| `backgroundColor` | `container.style.color` |
+| `backgroundColor` | `container.props.color` |
 | `backgroundImage` | `stack` with cover `image` + overlay |
 | `backgroundOverlayColor` | overlay `container` rgba |
-| `padding` | `container.style.padding` |
+| `padding` | `container.props.padding` |
 | `borderRadius` | `container.props.borderRadius` (resolve `theme-none` → `0`) |
 | `boxShadow` sm/md/lg | `container` elevation or card wrapper |
 
@@ -231,7 +231,7 @@ When any surface prop is non-default, wrap the flex node in an outer `container`
 {
   "id": "group-row-1",
   "type": "row",
-  "props": { "mainAxis": "start", "crossAxis": "center", "gap": 16 },
+  "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "center", "gap": 16 },
   "children": [
     {
       "id": "button-shop-2",

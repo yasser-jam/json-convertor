@@ -68,11 +68,11 @@ Reset counter at each page boundary.
 | G-19 | Uniform sibling spacing: parent `props.gap` (no per-child skip) |
 | G-20 | Push to edges: `mainAxisAlignment: "spaceBetween"` or `container` with `expand: true` |
 | G-21 | Row child that should fill width: wrap in `container` with `expand: true`, `expandAxis: "horizontal"` |
-| G-22 | Map web flex alignment to mobile `mainAxis` / `crossAxis` — see [blocks/09-layout-blocks.md](blocks/09-layout-blocks.md) |
+| G-22 | Map web flex alignment to mobile `mainAxisAlignment` / `crossAxisAlignment` — see [blocks/09-layout-blocks.md](blocks/09-layout-blocks.md) |
 
 ### Alignment enum map
 
-| Web (`alignItems` / `justifyContent`) | Mobile (`crossAxis` / `mainAxis`) |
+| Web (`alignItems` / `justifyContent`) | Mobile (`crossAxisAlignment` / `mainAxisAlignment`) |
 |---------------------------------------|-------------------------------------|
 | `flex-start`, `start` | `start` |
 | `center` | `center` |
@@ -88,8 +88,8 @@ Reset counter at each page boundary.
 
 | Rule | Detail |
 |------|--------|
-| G-23 | Put padding/margin in `style.padding` / `style.margin` when using box model |
-| G-24 | Background on containers: `style.color` or `props.color` (hex) — **not** misnamed fields |
+| G-23 | Put padding/margin in `props.padding` / `props.margin` — the engine has **no** `style` wrapper; all box-model values live in flat `props` |
+| G-24 | Background on containers: `props.color` (hex) — **not** `style.color` or misnamed fields |
 | G-25 | Parse web `"32px"` → numeric `32` for mobile padding where renderer expects numbers |
 | G-26 | Border radius: map web steps (`sm`, `md`, …) to theme radius px or literal int |
 

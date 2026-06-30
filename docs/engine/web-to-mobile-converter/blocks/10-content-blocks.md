@@ -50,6 +50,8 @@ Web content blocks ([docs/BLOCKS.md](../../BLOCKS.md)) → mobile primitives.
 | `textAlign` / `align` | `textAlign` |
 | `fontSize` theme-md etc. | resolve via [07-shared-fields.md](../07-shared-fields.md) |
 | `color` / `color: muted` | theme text/muted |
+| `fontFamily` | **Delete** — not supported in mobile engine |
+| `lineHeight` | **Delete** — not supported as standalone prop |
 
 ---
 
@@ -61,7 +63,7 @@ Web content blocks ([docs/BLOCKS.md](../../BLOCKS.md)) → mobile primitives.
 
 | Web | Mobile |
 |-----|--------|
-| `richtext` (HTML) | `props.richtext` (safe subset) or stripped `text` |
+| `richtext` (HTML) | `props.value` (safe subset) or stripped `text` |
 
 ---
 
@@ -121,7 +123,7 @@ Web content blocks ([docs/BLOCKS.md](../../BLOCKS.md)) → mobile primitives.
 {
   "id": "button-shop-1",
   "type": "button",
-  "props": { "label": "اشتر الآن", "height": 56, "variant": "primary" },
+  "props": { "label": "اشتر الآن", "height": 56, "variant": "elevated" },
   "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
 }
 ```
@@ -130,7 +132,7 @@ Web content blocks ([docs/BLOCKS.md](../../BLOCKS.md)) → mobile primitives.
 
 ## ContentIcon / Icon
 
-`ContentIcon` is registered; legacy `ContentIcon` in old configs may use PascalCase Lucide names — normalize to **lowercase kebab-case** (`shield-check`, not `ShieldCheck`).
+`ContentIcon` is registered; web input uses **kebab-case** Lucide names (`shield-check`, not PascalCase `ShieldCheck`).
 
 ### Decomposition
 
@@ -156,7 +158,7 @@ Web content blocks ([docs/BLOCKS.md](../../BLOCKS.md)) → mobile primitives.
 | `truck` | `local_shipping` |
 | `shield-check` | `verified_user` |
 
-**Gap:** Unknown Lucide → `error_outline` fallback.
+**Gap:** Unknown Lucide → `help_outline` fallback.
 
 ---
 
@@ -170,7 +172,7 @@ Web content blocks ([docs/BLOCKS.md](../../BLOCKS.md)) → mobile primitives.
 |-----|--------|
 | `src` | `props.url`, `source: "network"` |
 | `alt` | `props.alt` / `semanticsLabel` |
-| `align` | parent `column` `crossAxis` |
+| `align` | parent `column` `crossAxisAlignment` |
 | `objectFit` | `props.fit`: cover/contain/fill |
 | `radius` | `props.borderRadius` (resolve `theme-md`, etc.) |
 | `maxWidth` | `container` max width constraint |
@@ -181,16 +183,18 @@ Web content blocks ([docs/BLOCKS.md](../../BLOCKS.md)) → mobile primitives.
 
 ### Decomposition
 
-`videoPlayer` with embed URL, or `image` poster + `tap.openUrl`
+- **MP4/HLS direct URL:** `videoPlayer` with `props.url`
+- **YouTube URL:** `image` thumbnail + node-level `tap.openUrl` (YouTube is **not** supported by `videoPlayer`)
 
 | Web | Mobile |
 |-----|--------|
-| `src` (YouTube watch/short URL) | normalized embed URL |
+| `src` (YouTube watch/short URL) | `image` + `tap: { type: "openUrl", url: "..." }` — never `videoPlayer` |
+| `src` (MP4/HLS) | `videoPlayer` with `props.url` |
 | `size` (`theme-315`, px) | `props.height` |
 | `align` | wrapper alignment |
 | `radius` | `props.borderRadius` |
 
-**Gap:** YouTube iframe policies — fallback to `openUrl` tap.
+**Hard rule:** YouTube iframe playback is blocked by the mobile engine. Always use thumbnail `image` + `openUrl` tap.
 
 ---
 
@@ -214,7 +218,7 @@ container or stack
 | `description` (HTML) | `richtext` / `text` |
 | `buttons[]` | each → `button` in `row`; `variant` optional (defaults primary) |
 | `buttons[].href` | `tap.navigate` (legacy string href — prefer LinkValue on new blocks) |
-| `align` | column `crossAxis` + text `textAlign` |
+| `align` | column `crossAxisAlignment` + text `textAlign` |
 | `padding` | container padding |
 | `image.mode: background` | `stack` with full-bleed `image` |
 | `image.mode: inline` | `column`: image then content |
@@ -327,7 +331,8 @@ Raw HTML — **not shown on mobile/small screens** on web. Mobile policy unchang
 | Button | legacy | `button` |
 | ContentIcon | blocks / legacy | `icon` |
 | ContentImage | blocks | `image` |
-| VideoEmbed | blocks | `videoPlayer` |
+| VideoEmbed (YouTube) | blocks | `image` + `tap.openUrl` |
+| VideoEmbed (MP4) | blocks | `videoPlayer` |
 | Hero | legacy | `stack` / `column` composite |
 | Card | legacy | `card` / `column` composite |
 | Accordion | blocks | `column` + `expansionTile` |
