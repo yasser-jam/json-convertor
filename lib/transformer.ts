@@ -91,13 +91,13 @@ function resolveColor(
   if (colorMode === "theme" && colorTheme) {
     const colorMap: Record<string, string> = {
       primary: (rootProps.primary as string) || "#0b78c5",
-      surface: (rootProps.surface as string) || "#f6f8fc",
+      surface: (rootProps.surface as string) || "#ffffff",
       success: (rootProps.success as string) || "#0f9d73",
       warning: (rootProps.warning as string) || "#c77a15",
-      error: (rootProps.error as string) || "#c24133",
+      error: (rootProps.error as string) || "#ef4444",
       dark: (rootProps.dark as string) || "#10213a",
-      text: (rootProps.text as string) || "#14243f",
-      neutral: (rootProps.neutral as string) || "#6b7d93",
+      text: (rootProps.text as string) || "#0f172a",
+      neutral: (rootProps.neutral as string) || "#64748b",
     };
     return colorMap[colorTheme];
   }
@@ -136,12 +136,18 @@ function resolveThemePx(
   };
   if (spacingMap[themeKey] !== undefined) return spacingMap[themeKey];
 
-  if (themeKey === "full") return 9999;
+  if (themeKey === "none") return 0;
+  if (themeKey === "full") return 999;
+
+  // Radius tokens: fixed spec defaults, override with rootProps if available
   const radiusPropMap: Record<string, string> = {
     sm: "radiusSm", md: "radiusMd", lg: "radiusLg", xl: "radiusXl",
   };
+  const radiusFallbackMap: Record<string, number> = { sm: 4, md: 8, lg: 12, xl: 16 };
   if (radiusPropMap[themeKey]) {
-    return parsePx(rootProps[radiusPropMap[themeKey]] as string, fallback);
+    const fromRoot = rootProps[radiusPropMap[themeKey]];
+    if (fromRoot !== undefined) return parsePx(fromRoot as string, radiusFallbackMap[themeKey]);
+    return radiusFallbackMap[themeKey];
   }
 
   return resolveFontSize(themeKey, fallback);
@@ -411,8 +417,8 @@ function applyLayout(
       ...node,
       props: { ...((node.props || {}) as Record<string, unknown>), stackLayer: "positioned", ...(anchorMap[preset] || {}) },
     };
-    if (margin.top) stacked.props = { ...(stacked.props as Record<string, unknown>), stackTop: margin.top };
-    if (margin.right) stacked.props = { ...(stacked.props as Record<string, unknown>), stackRight: margin.right };
+    if (margin.top) (stacked.props as Record<string, unknown>).stackTop = margin.top;
+    if (margin.right) (stacked.props as Record<string, unknown>).stackRight = margin.right;
 
     return {
       id: generateId("stack-wrapper"),
@@ -566,7 +572,6 @@ function transformImage(block: Record<string, unknown>, rootProps: Record<string
   const outProps: Record<string, unknown> = {
     url: (props.src as string) || "",
     source: "network",
-    alt: (props.alt as string) || "",
     semanticsLabel: (props.alt as string) || "",
     fit: (props.objectFit as string) || "cover",
   };
@@ -595,8 +600,8 @@ function transformVideo(block: Record<string, unknown>, rootProps: Record<string
 
   const outProps: Record<string, unknown> = {
     url: (props.src as string) || "",
-    controls: (props.controls as string) !== "off",
-    autoPlay: (props.autoPlay as string) === "on",
+    showControls: (props.controls as string) !== "off",
+    autoplay: (props.autoPlay as string) === "on",
     loop: (props.loop as string) === "on",
     muted: (props.muted as string) === "on",
   };
@@ -1114,8 +1119,9 @@ function transformFlex(block: Record<string, unknown>, rootProps: Record<string,
   const axisMap: Record<string, string> = {
     center: "center", "flex-start": "start", start: "start",
     "flex-end": "end", end: "end", "space-between": "spaceBetween",
-    spaceBetween: "spaceBetween", "space-around": "spaceAround", stretch: "stretch",
-    baseline: "baseline",
+    spaceBetween: "spaceBetween", "space-around": "spaceAround", spaceAround: "spaceAround",
+    "space-evenly": "spaceEvenly", spaceEvenly: "spaceEvenly",
+    stretch: "stretch", baseline: "baseline",
   };
   const crossAxisAlignment = axisMap[(props.alignItems as string) || ""] || (isRow ? "center" : "stretch");
   const mainAxisAlignment = axisMap[(props.justifyContent as string) || ""] || "start";
@@ -1141,30 +1147,18 @@ function transformLayoutGrid(block: Record<string, unknown>, rootProps: Record<s
   const numCols = parseInt((props.numColumns as string) || "2", 10);
   const gap = parsePx(props.gap as string | number, 16);
 
-  const converted = items.map((c: Record<string, unknown>) => transformBlock(c, rootProps));
-
-  // Distribute items into rows of numCols
-  const rows: Record<string, unknown>[] = [];
-  for (let i = 0; i < converted.length; i += numCols) {
-    const rowItems = converted.slice(i, i + numCols).map((item) => ({
-      id: generateId("grid-cell"),
-      type: "container",
-      props: { expand: true, expandAxis: "horizontal" },
-      child: item,
-    }));
-    rows.push({
-      id: generateId("grid-row"),
-      type: "row",
-      props: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "stretch", gap },
-      children: rowItems,
-    });
-  }
+  const converted = items.map((c: Record<string, unknown>) => transformBlock(c, rootProps)).filter(Boolean) as Record<string, unknown>[];
 
   const node: Record<string, unknown> = {
-    id: generateId("grid-wrapper"),
-    type: "column",
-    props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap },
-    children: rows,
+    id: generateId("grid-layout"),
+    type: "gridView",
+    props: {
+      crossAxisCount: numCols,
+      mainAxisSpacing: gap,
+      crossAxisSpacing: gap,
+      childAspectRatio: 1.0,
+    },
+    children: converted,
   };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
@@ -1195,18 +1189,17 @@ function buildProductGridItemTemplate(cardVariant: string): Record<string, unkno
     id: generateId("pt-image"),
     type: "image",
     props: {
-      urlPath: "item.image",
+      urlPath: "item.primaryImageUrl",
       source: "network",
       fit: "cover",
-      borderRadius: "md",
-      height: imageHeight,
-      ...(isHorizontal ? { width: 120 } : {}),
+      aspectRatio: 1.0,
+      ...(isHorizontal ? { width: 120, height: imageHeight } : {}),
     },
   };
 
   const textNodes = [
-    { id: generateId("pt-name"), type: "text", props: { valuePath: "item.name", fontSize: cardVariant === "compact" ? 12 : 14, fontWeight: "bold" } },
-    { id: generateId("pt-price"), type: "text", props: { valuePath: "item.price", fontSize: cardVariant === "compact" ? 12 : 14, color: "#0b78c5" } },
+    { id: generateId("pt-name"), type: "text", props: { valuePath: "item.name", fontSize: cardVariant === "compact" ? 12 : 14, fontWeight: "w600" } },
+    { id: generateId("pt-price"), type: "text", props: { valuePath: "item.price", fontSize: cardVariant === "compact" ? 12 : 13 } },
   ];
 
   const bodyChildren = isHorizontal
@@ -1394,6 +1387,7 @@ function transformProductGrid(block: Record<string, unknown>, rootProps: Record<
       crossAxisCount: columns,
       mainAxisSpacing: gap,
       crossAxisSpacing: gap,
+      childAspectRatio: 0.75,
       enableInnerScroll: false,
       requestKey,
       requestUrl,
@@ -1484,47 +1478,23 @@ function transformProductDetails(block: Record<string, unknown>, rootProps: Reco
 }
 
 function transformCartSection(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
-  const children: Record<string, unknown>[] = [];
-
-  children.push({
-    id: generateId("cart-title"),
-    type: "text",
-    props: { value: "سلة التسوق", fontSize: 22, fontWeight: "bold" },
-  });
-
-  children.push({
-    id: generateId("cart-items"),
+  const node: Record<string, unknown> = {
+    id: generateId("cart-list"),
     type: "listView",
-    props: {
-      data: { source: "collection", id: "cart-items", requestKey: "cart-list", requestUrl: "/api/v1/customer/cart" },
-    },
+    props: { emptyMessage: "السلة فارغة" },
     itemBuilder: {
       type: "repeat",
       source: "cart.items",
       item: {
-        id: generateId("cart-line"),
-        type: "card",
-        props: { elevation: 1, borderRadius: 8 },
-        child: {
-          id: generateId("cl-row"),
-          type: "row",
-          props: { crossAxisAlignment: "center", mainAxisAlignment: "spaceBetween", gap: 12 },
-          children: [
-            { id: generateId("cl-image"), type: "image", props: { urlPath: "item.image", source: "network", fit: "cover", width: 60, height: 60, borderRadius: "sm" } },
-            { id: generateId("cl-name"), type: "text", props: { valuePath: "item.name", fontSize: 14 } },
-            { id: generateId("cl-qty"), type: "text", props: { valuePath: "item.quantity", fontSize: 14 } },
-            { id: generateId("cl-price"), type: "text", props: { valuePath: "item.price", fontSize: 14, color: "#0b78c5" } },
-          ],
-        },
+        id: generateId("cart-line-tpl"),
+        type: "row",
+        props: { gap: 12, crossAxisAlignment: "center" },
+        children: [
+          { id: generateId("cart-img-tpl"), type: "image", props: { urlPath: "item.imageUrl", source: "network", width: 72, height: 72, fit: "cover" } },
+          { id: generateId("cart-name-tpl"), type: "text", props: { valuePath: "item.name", fontSize: 14 } },
+        ],
       },
     },
-  });
-
-  const node: Record<string, unknown> = {
-    id: generateId("cart-section"),
-    type: "column",
-    props: { crossAxisAlignment: "stretch", mainAxisAlignment: "start", gap: 16 },
-    children,
   };
   return applyLayout(node, (block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
 }
@@ -1619,41 +1589,27 @@ function transformCheckoutSummary(block: Record<string, unknown>, rootProps: Rec
       ],
     },
   };
-  return applyLayout(node, (_block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
+  return applyLayout(node, (block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
 }
 
 function transformOrderList(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
-  const maxOrders = parseInt(((block.props as Record<string, unknown>).maxOrders as string) || "5", 10);
+  const maxOrders = parseInt(((block.props as Record<string, unknown>).maxOrders as string) || "10", 10);
+  const requestKey = "order-history";
   return {
-    id: generateId("order-list"),
+    id: generateId("orders-list"),
     type: "listView",
     props: {
-      data: {
-        source: "collection",
-        id: "my-orders",
-        requestKey: "my-orders",
-        requestUrl: "/api/v1/customer/orders",
-        size: maxOrders,
-      },
+      requestKey,
+      requestUrl: `/api/v1/customer/orders?page=0&size=${maxOrders}`,
+      emptyMessage: "لا توجد طلبات بعد.",
     },
     itemBuilder: {
       type: "repeat",
-      source: "dataContext.requests.my-orders.data",
+      source: `dataContext.requests.${requestKey}.data`,
       item: {
         id: generateId("order-item"),
         type: "card",
-        props: { elevation: 1, borderRadius: 8 },
-        child: {
-          id: generateId("oi-body"),
-          type: "row",
-          props: { crossAxisAlignment: "center", mainAxisAlignment: "spaceBetween", gap: 12 },
-          children: [
-            { id: generateId("oi-number"), type: "text", props: { valuePath: "item.orderNumber", fontSize: 14, fontWeight: "bold" } },
-            { id: generateId("oi-status"), type: "text", props: { valuePath: "item.status", fontSize: 12 } },
-            { id: generateId("oi-total"), type: "text", props: { valuePath: "item.total", fontSize: 14, color: "#0b78c5" } },
-          ],
-        },
-        tap: { type: "navigate", route: "/orders/:orderId", navigation_type: "push" },
+        props: { borderRadius: 8 },
       },
     },
   };
@@ -1670,7 +1626,7 @@ function transformOrderDetails(block: Record<string, unknown>, rootProps: Record
       { id: generateId("od-total"), type: "text", props: { valuePath: "dataContext.requests.order-detail.data.total", fontSize: 16, fontWeight: "bold", color: "#0b78c5" } },
     ],
   };
-  return applyLayout(node, (_block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
+  return applyLayout(node, (block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
 }
 
 // ─── BLOCKS.md-specific transformers ─────────────────────────────────────────
@@ -1905,7 +1861,7 @@ function transformAccordion(block: Record<string, unknown>, rootProps: Record<st
     children.push({
       id: generateId("accordion-heading"),
       type: "text",
-      props: { value: props.heading as string, fontSize: 22, fontWeight: "bold" },
+      props: { value: props.heading as string, fontSize: 18, fontWeight: "bold" },
     });
   }
   if (props.description) {
@@ -1963,14 +1919,8 @@ function transformAccordion(block: Record<string, unknown>, rootProps: Record<st
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
-function transformBlank(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
-  const props = (block.props || {}) as Record<string, unknown>;
-  const node: Record<string, unknown> = {
-    id: generateId("blank"),
-    type: "text",
-    props: { value: (props.message as string) || "Placeholder", fontSize: 14, color: "#6b7d93" },
-  };
-  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+function transformBlank(_block: Record<string, unknown>, _rootProps: Record<string, unknown>): null {
+  return null;
 }
 
 function transformProductInfo(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
@@ -2018,43 +1968,23 @@ function transformProductInfo(block: Record<string, unknown>, rootProps: Record<
 
 function transformWishlist(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
-  const columns = parseInt(String(props.columns || 3), 10);
-  const gap = resolveGridGap(props.gap as string);
-  const lang = (rootProps.language as string) || "ar";
+  const columns = parseInt(String(props.columns || 2), 10);
   const requestKey = "wishlist";
-
-  const itemTemplate = buildProductGridItemTemplate("vertical");
-  if (props.showAddToCart !== false) {
-    const cardChild = itemTemplate.child as Record<string, unknown>;
-    const col = cardChild.children as Record<string, unknown>[];
-    col.push({
-      id: generateId("wl-add-cart"),
-      type: "button",
-      props: { label: (props.ctaLabel as string) || (lang === "ar" ? "أضف للسلة" : "Add to cart"), height: 40, variant: "elevated" },
-      tap: { type: "cubitCall", cubit: "cart", method: "addItem" },
-    });
-  }
 
   return applyLayout(
     {
-      id: generateId("wishlist"),
+      id: generateId("wishlist-grid"),
       type: "gridView",
       props: {
         crossAxisCount: columns,
-        mainAxisSpacing: gap,
-        crossAxisSpacing: gap,
-        enableInnerScroll: false,
-        data: {
-          source: "collection",
-          id: "wishlist-grid",
-          requestKey,
-          requestUrl: "/api/v1/customer/wishlist",
-        },
+        requestKey,
+        requestUrl: "/api/v1/customer/wishlist",
+        emptyMessage: "قائمة المفضلة فارغة.",
       },
       itemBuilder: {
         type: "repeat",
         source: `dataContext.requests.${requestKey}.data`,
-        item: itemTemplate,
+        item: {},
       },
     },
     props.layout as Record<string, unknown> | undefined,
@@ -2559,8 +2489,8 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
 
     default: {
       if (UNSUPPORTED_LEAF_BLOCKS.has(type)) {
-        addWarning(`Block type "${rawType}" has no mobile equivalent; skipped`);
-        return null;
+        addWarning(`Block type "${rawType}" has no mobile equivalent; rendered as unsupported`);
+        return { id: generateId("unsupported"), type: "unsupported", props: { blockType: rawType } };
       }
 
       const props = block.props as Record<string, unknown> || {};
@@ -2659,6 +2589,56 @@ function transformNavigation(rootProps: Record<string, unknown>, pages: Record<s
 
 // ─── Page Assembly ──────────────────────────────────────────────────────────
 
+function buildAppDrawer(drawerBlock: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (drawerBlock.props || {}) as Record<string, unknown>;
+  const dir = (rootProps.direction as string) || "rtl";
+  const sideRaw = (props.side as string) || (props.drawerSide as string) || "";
+  let drawerEdge = "start";
+  if (sideRaw === "right") drawerEdge = "end";
+  else if (sideRaw === "left") drawerEdge = "start";
+  else drawerEdge = dir === "rtl" ? "start" : "start";
+
+  const bg = (props.backgroundColor as string) || "#ffffff";
+  const width = parsePx(props.width as string, 320);
+  const lang = (rootProps.language as string) || "ar";
+
+  const navLinks = (props.items as Record<string, unknown>[]) || (props.links as Record<string, unknown>[]) || [];
+  const linkNodes = navLinks.map((item) => {
+    const tap = resolveLayoutTap({ link: item.link, href: item.href } as Record<string, unknown>, rootProps);
+    return {
+      id: generateId("drawer-link"),
+      type: "button",
+      props: {
+        label: resolveBilingual(item.label as string, item.labelAr as string, lang),
+        variant: "text",
+        fullWidth: true,
+      },
+      ...(tap ? { tap } : {}),
+    };
+  });
+
+  if (linkNodes.length === 0) {
+    linkNodes.push({
+      id: generateId("drawer-link-home"),
+      type: "button",
+      props: { label: lang === "ar" ? "الرئيسية" : "Home", variant: "text", fullWidth: true },
+      tap: { type: "navigate", route: "/home", navigation_type: "go" },
+    });
+  }
+
+  return {
+    id: generateId("drawer"),
+    type: "appDrawer",
+    props: { drawerEdge, width, backgroundColor: bg },
+    child: {
+      id: generateId("drawer-col"),
+      type: "column",
+      props: { gap: 0 },
+      children: linkNodes,
+    },
+  };
+}
+
 function transformPage(page: Record<string, unknown>): Record<string, unknown> {
   const path = normalizeRoute((page.path as string) || "/");
   const label = (page.label as string) || (page.title as string) || "Page";
@@ -2671,11 +2651,13 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
   const bodyBlocks: Record<string, unknown>[] = [];
   let hasHeader = false;
   let hasFooter = false;
+  let drawerBlock: Record<string, unknown> | null = null;
 
   for (const block of blocks) {
     const type = block.type as string;
     if (type === "SiteHeader") { hasHeader = true; continue; }
     if (type === "SiteFooter") { hasFooter = true; continue; }
+    if (type === "SiteDrawerShell" || type === "SideDrawer") { drawerBlock = block as Record<string, unknown>; continue; }
     bodyBlocks.push(block);
   }
 
@@ -2684,40 +2666,55 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
 
   // Build appBar from SiteHeader / root props
   const headerTitle = (rootProps.headerBrandTitle as string) || label;
-  const headerBg = (rootProps.headerBackgroundColor as string) || "#FFFFFF";
-  const headerFg = (rootProps.headerTextColor as string) || "#0F172A";
-  const showDrawer = (rootProps.headerShowDrawerButton as string) === "on" || rootProps.headerShowDrawerButton === true;
+  const headerBg = (rootProps.headerBackgroundColor as string) || "#ffffff";
+  const headerFg = (rootProps.headerTextColor as string) || "#0f172a";
+  const showDrawer = (rootProps.headerShowDrawerButton as string) === "on" || rootProps.headerShowDrawerButton === true || drawerBlock !== null;
+  const showCartIcon = (rootProps.headerShowCart as string) !== "off";
+
+  const appBarProps: Record<string, unknown> = {
+    title: headerTitle || label,
+    showBackButton: path !== "/home",
+    backgroundColor: headerBg,
+    foregroundColor: headerFg,
+    elevation: 0,
+  };
+
+  if (showDrawer) {
+    appBarProps.showMenu = true;
+    appBarProps.menuAction = { type: "openDrawer" };
+  }
+
+  if (showCartIcon) {
+    appBarProps.showCartIcon = true;
+    appBarProps.cartBadgePath = "cart.itemCount";
+    appBarProps.cartAction = { type: "navigate", route: "/cart" };
+  }
 
   const appBar: Record<string, unknown> = {
     id: `${slugPart}-app-bar`,
     type: "appBar",
-    props: {
-      title: headerTitle || label,
-      showBackButton: path !== "/home",
-      backgroundColor: headerBg,
-      foregroundColor: headerFg,
-      elevation: 0,
-    },
+    props: appBarProps,
   };
-  if (showDrawer) {
-    (appBar.props as Record<string, unknown>).actions = [
-      { type: "icon", name: "menu", tap: { type: "openDrawer" } },
-    ];
-  }
 
-  // Build footer if SiteHeader was present (footer is optional)
+  // Build footer if SiteFooter was present
   const footerNode = hasFooter ? buildFooter(rootProps) : null;
   if (footerNode) body.push(footerNode);
 
-  return {
+  // Build appDrawer when SiteDrawerShell is present
+  const appDrawer = drawerBlock ? buildAppDrawer(drawerBlock, rootProps) : undefined;
+
+  const pageNode: Record<string, unknown> = {
     id: `page-${slugPart}`,
     route: path,
     title: label,
-    background: (page.background as string) || "#FFFFFF",
+    background: (page.background as string) || "#ffffff",
     scroll: (page.scroll as string) || "vertical",
     appBar,
     body,
   };
+  if (appDrawer) pageNode.appDrawer = appDrawer;
+
+  return pageNode;
 }
 
 function buildFooter(rootProps: Record<string, unknown>): Record<string, unknown> | null {
