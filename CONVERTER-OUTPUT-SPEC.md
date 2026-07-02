@@ -1,6 +1,6 @@
 # Converter Output Specification
 
-**Version:** 2026-07-01  
+**Version:** 2026-07-02 *(revised per mobile team review — see `CONVERTER-SPEC-REVIEW-2026-07-01.md`)*  
 **Source file:** `lib/transformer.ts` → `transformWebToMobile()`  
 **Audience:** Mobile engine team — Flutter SDUI renderers, schema validation, Dart model generation  
 **Purpose:** Authoritative description of every JSON shape the converter emits. Use this document as the single source of truth when building renderers, writing Dart schemas, and validating converter output.
@@ -22,6 +22,7 @@
 9. [Data-bound blocks (API-connected)](#9-data-bound-blocks)
 10. [Unsupported blocks](#10-unsupported-blocks)
 11. [Validation checklist](#11-validation-checklist)
+12. [Known limitations](#12-known-limitations)
 
 ---
 
@@ -78,7 +79,7 @@ Every `"type"` field in converter output is one of these registered engine primi
 
 | Category | Types |
 |----------|-------|
-| Scaffold / scroll | `scaffold`, `singleChildScrollView` |
+| Scroll | `singleChildScrollView` *(legacy; prefer page-level `scroll`)* |
 | Layout | `column`, `row`, `container`, `stack`, `listView`, `gridView`, `sizedBox` |
 | Content | `text`, `richtext`, `image`, `icon`, `divider`, `videoPlayer`, `imageSlider` |
 | Input / forms | `textFormField`, `form`, `button`, `contactButton`, `otpInput`, `dropdown` |
@@ -86,6 +87,8 @@ Every `"type"` field in converter output is one of these registered engine primi
 | Other | `timer`, `progressIndicator`, `unsupported` |
 
 Web block type names (`Button`, `Section`, `ContentParagraph`, etc.) **never appear** in converter output.
+
+> **`scaffold` is engine-internal — never emit it.** Page background and scroll are controlled by page-level keys (`background`, `scroll: "vertical" | "none"`), not by a node in `body[]`.
 
 ---
 
@@ -154,23 +157,37 @@ All navigation, actions and links are placed as a **sibling of `props`** on the 
 
 `buttonAction`, `link`, `href`, `destinationType` are **never** emitted inside `props`. `onTap` is never emitted at all (runtime-injected).
 
+**Action types reference:**
+
+| `tap.type` | Shape | Use |
+|------------|-------|-----|
+| `navigate` | `{ "type": "navigate", "route": "/path", "navigation_type": "push" \| "go" \| "replace" }` | In-app routing |
+| `openUrl` | `{ "type": "openUrl", "url": "https://..." }` | External URL |
+| `openContact` | `{ "type": "openContact", "channel": "tel" \| "sms" \| "email" \| "whatsapp" \| "url", "target": "+966..." }` | Launch contact URI from a normal `button` |
+| `formAdjust` | `{ "type": "formAdjust", "field": "phonePrefix", "value": "+966" }` | Set a form field value programmatically |
+| `cubitCall` | `{ "type": "cubitCall", "cubit": "cart", "method": "addItem" }` | Cubit method call |
+| `apiCall` | `{ "type": "apiCall", "method": "POST", "url": "/api/...", "requireValidForm": true, "formId": "..." }` | Form submission |
+| `openDrawer` | `{ "type": "openDrawer" }` | Open navigation drawer |
+
 ### G3 — No theme tokens in output
 
 All `"theme-*"` strings, `colorMode`/`colorTheme`/`colorFixed` triples, and `px` strings are resolved to concrete numbers or hex strings at conversion time. See [Section 5](#5-token-resolution-tables).
 
-### G4 — Flat `props` (no `style` wrapper)
+### G4 — Prefer flat `props`
 
-All visual and box-model properties live directly in `props`. There is no nested `style` object.
+The converter emits all visual and box-model properties directly in `props`. The engine also accepts a `style` sub-object, but **only** for: `padding`, `margin`, `borderRadius`, `border`, `shadow`, `background`/`color`, `width`, `height`. Any other key inside `style` is dropped.
 
-**Wrong:** `"style": { "color": "#fff", "padding": { "top": 32 } }`  
-**Correct:** `"props": { "color": "#fff", "padding": { "top": 32 } }`
+**Converter output (preferred):** `"props": { "color": "#fff", "padding": { "top": 32 } }`
 
-### G5 — Full alignment property names
+### G5 — Prefer canonical alignment names
 
-| Wrong | Correct |
-|-------|---------|
+The converter emits canonical names. The engine also normalizes shorthand `mainAxis`/`crossAxis`/`align` → `mainAxisAlignment`/`crossAxisAlignment`/`textAlign`.
+
+| Shorthand (engine-accepted) | Canonical (converter emits) |
+|-----------------------------|----------------------------|
 | `"mainAxis": "center"` | `"mainAxisAlignment": "center"` |
 | `"crossAxis": "stretch"` | `"crossAxisAlignment": "stretch"` |
+| `"align": "right"` | `"textAlign": "right"` |
 
 Valid `mainAxisAlignment` values: `start`, `center`, `end`, `spaceBetween`, `spaceAround`, `spaceEvenly`  
 Valid `crossAxisAlignment` values: `start`, `center`, `end`, `stretch`, `baseline`
@@ -275,9 +292,11 @@ Valid `crossAxisAlignment` values: `start`, `center`, `end`, `stretch`, `baselin
 |-----------------|---------------------|
 | `theme-light` / `light` / `normal` | `"normal"` |
 | `theme-normal` | `"normal"` |
-| `theme-semibold` / `semibold` | `"bold"` |
+| `theme-semibold` / `semibold` | `"semibold"` or `"w600"` |
 | `theme-bold` / `bold` | `"bold"` |
 | `medium` | `"medium"` |
+
+Accepted engine values: `w100`–`w900`, `light`, `normal`, `medium`, `semibold`, `bold`. Anything else (e.g. `semiBold`, `thin`, `extraBold`, `black`) falls through to `normal`.
 
 ### Web flex alignment → mobile
 
@@ -291,6 +310,32 @@ Valid `crossAxisAlignment` values: `start`, `center`, `end`, `stretch`, `baselin
 | `space-evenly`, `spaceEvenly` | `spaceEvenly` |
 | `stretch` | `stretch` |
 | `baseline` | `baseline` |
+
+### Shadow token map
+
+Accepted by `container`, `button`, and `textFormField` only. (`card` uses `elevation` — not `shadow`.)
+
+| Token | Approximate CSS equivalent | Typical use |
+|-------|---------------------------|-------------|
+| `"none"` | no shadow | Explicitly remove a themed default |
+| `"sm"` | ~4 % opacity / 8 px blur | Small cards, chips, form fields |
+| `"md"` | ~8 % opacity / 16 px blur | Filter bars, floating elements |
+| `"lg"` | ~12 % opacity / 24 px blur | Featured cards, panels |
+| `"xl"` | ~16 % opacity / 32 px blur | Modals, checkout dock |
+
+**CSS `box-shadow` → token approximation:**
+
+| CSS shadow | Token |
+|------------|-------|
+| `none` | `"none"` |
+| `0 1px 4px rgba(0,0,0,0.08)` or smaller | `"sm"` |
+| `0 4px 12px rgba(0,0,0,0.12)` | `"md"` |
+| `0 8px 24px rgba(0,0,0,0.16)` | `"lg"` |
+| `0 16px 40px rgba(0,0,0,0.20)` or larger | `"xl"` |
+
+```json
+{ "type": "container", "props": { "color": "#ffffff", "borderRadius": 12, "shadow": "md" } }
+```
 
 ### Lucide icon → Material icon name
 
@@ -496,7 +541,12 @@ The HTML is passed through as-is. The mobile renderer strips tags for display.
 }
 ```
 
-**Supported `button` props:** `label`, `variant`, `height`, `fullWidth`, `color` (from theme).
+**Supported `button` props:** `label`, `variant`, `height`, `fullWidth`, `color` (from theme), `shadow`, `enabledPath`, `enabledWhen`.
+
+**Conditional enable** — gate a button on form validity or data context:
+```json
+{ "type": "button", "props": { "label": "تأكيد", "enabledPath": "form.isValid", "enabledWhen": true } }
+```
 
 **`buttonAction` → `tap` mapping:**
 
@@ -512,6 +562,29 @@ The HTML is passed through as-is. The mobile renderer strips tags for display.
 | `addToWishlist` | `{ "type": "navigate", "route": "/wishlist", "navigation_type": "push" }` |
 
 > `buttonAction`, `link`, `href`, `destinationType` are **never** emitted inside `props`.
+
+### 6.5b ContactButton (optional)
+
+Emit `contactButton` only when the link target is unambiguously a contact URI (`tel:`, `sms:`, `mailto:`, `wa.me`) **and** channel styling is desired. A normal `button` with `tap: { type: "openContact" }` or `tap: { type: "openUrl" }` to a `tel:`/`mailto:` URL also works.
+
+Required props: `channel` + `label`. Default `fullWidth: true`.
+
+| Channel | Background | Icon |
+|---------|-----------|------|
+| `whatsapp` | `#25D366` | `phone` |
+| `tel` | `#1D4ED8` | `phone` |
+| `sms` | `#0F172A` | `sms` |
+| `email` | `#475569` | `mail` |
+| `url` | `#1D4ED8` | `help_outline` |
+
+```json
+{
+  "id": "contact-btn-1",
+  "type": "contactButton",
+  "props": { "channel": "whatsapp", "label": "تواصل عبر واتساب", "fullWidth": true },
+  "tap": { "type": "openContact", "channel": "whatsapp", "target": "+966501234567" }
+}
+```
 
 ---
 
@@ -594,7 +667,7 @@ Unknown Lucide icons resolve to `help_outline`.
 |-----------|--------------|-------|
 | `src` | `url` | required rename |
 | — | `source: "network"` | always set |
-| `alt` | `semanticsLabel` | |
+| `alt` | `semanticsLabel` | prefer `semanticsLabel`; engine also accepts `alt` |
 | `objectFit` | `fit` | |
 | `radius` (token) | `borderRadius` (number) | resolved |
 | `aspectRatio` (string) | `aspectRatio` (number) | resolved |
@@ -652,15 +725,15 @@ Unknown Lucide icons resolve to `help_outline`.
     "props": {
       "url": "https://example.com/promo.mp4",
       "showControls": true,
-      "autoplay": false,
-      "loop": false,
-      "muted": false
+      "autoplay": false
     }
   }
 }
 ```
 
 When no `aspectRatio` is set, the `container` wrapper is omitted and `videoPlayer` is emitted directly.
+
+> `loop` and `muted` are **not** read by the engine — do not emit them.
 
 ---
 
@@ -738,7 +811,7 @@ Non-YouTube `VideoEmbed` is treated the same as a `Video` block:
     {
       "id": "hero-bg-2",
       "type": "image",
-      "props": { "url": "https://example.com/hero.jpg", "source": "network", "fit": "cover" }
+      "props": { "url": "https://example.com/hero.jpg", "source": "network", "fit": "cover", "stackLayer": "fill" }
     },
     {
       "id": "hero-col-3",
@@ -765,6 +838,17 @@ Non-YouTube `VideoEmbed` is treated the same as a `Video` block:
   ]
 }
 ```
+
+**`stack` child positioning** — per-child props on each child node's `props` (not on the `stack` itself):
+
+| Prop | Notes |
+|------|-------|
+| `stackLayer` | `"fill"` (index 0 default) \| `"positioned"` (default for others) |
+| `stackAlign` | alignment when positioned (default `"bottomCenter"`) |
+| `stackInsetBottom` | fixed px from bottom — preferred for footers/docks |
+| `stackWidthFactor` | width as fraction of stack (`1` = full width) |
+
+Without these, every non-background child lands at the default bottom-center position. Background images should use `stackLayer: "fill"`.
 
 #### No background image → `container` + `column`
 
@@ -984,6 +1068,19 @@ When no background image is present, Hero emits:
 | `autoplayDuration: "theme-5"` | `intervalMs: 5000` | token × 1000 ms |
 | `showArrows`, `slidesPerView` | — | **not emitted** (not in engine schema) |
 
+**Advanced props** (supported by engine, emitted when web input provides them):
+
+| Prop | Values |
+|------|--------|
+| `enableFullscreenPreview` | boolean |
+| `showThumbnails` | boolean |
+| `thumbnailSize` | number (px) |
+| `animationDurationMs` | number |
+| `indicatorStyle` | `"dot"` \| `"pill"` |
+| `indicatorPosition` | `"top"` \| `"bottom"` |
+| `indicatorColor` | hex string |
+| `indicatorInactiveColor` | hex string |
+
 ---
 
 ### 6.16b ImageGallery (grid mode)
@@ -1126,7 +1223,7 @@ When `backgroundImage` is present on a `Section`:
   "type": "stack",
   "props": { "fit": "loose" },
   "children": [
-    { "id": "section-bg-image-2", "type": "image", "props": { "url": "...", "source": "network", "fit": "cover" } },
+    { "id": "section-bg-image-2", "type": "image", "props": { "url": "...", "source": "network", "fit": "cover", "stackLayer": "fill" } },
     {
       "id": "section-overlay-3",
       "type": "container",
@@ -1147,9 +1244,9 @@ When `backgroundImage` is present on a `Section`:
 }
 ```
 
----
+> See [Section 6.12](#612-hero) for `stack` child positioning props (`stackLayer`, `stackAlign`, `stackInsetBottom`, `stackWidthFactor`).
 
-### 6.21 Stats
+---
 
 **Web input:**
 ```json
@@ -1209,7 +1306,7 @@ When `backgroundImage` is present on a `Section`:
 {
   "id": "contact-form-1",
   "type": "form",
-  "props": { "id": "contact-form" },
+  "props": { "formId": "contact-form", "id": "contact-form" },
   "child": {
     "id": "contact-col-2",
     "type": "column",
@@ -1218,15 +1315,20 @@ When `backgroundImage` is present on a `Section`:
       {
         "id": "contact-field-3",
         "type": "textFormField",
-        "props": { "label": "الاسم", "hint": "", "name": "name", "textDirection": "rtl" }
+        "props": { "id": "name", "label": "الاسم", "hint": "", "validateRequired": true, "textDirection": "rtl" }
       },
       {
         "id": "contact-field-4",
         "type": "textFormField",
-        "props": { "label": "البريد الإلكتروني", "hint": "", "name": "email", "textDirection": "ltr" }
+        "props": { "id": "email", "label": "البريد الإلكتروني", "hint": "", "keyboardType": "email", "validateEmail": true, "textDirection": "ltr" }
       },
       {
-        "id": "contact-submit-5",
+        "id": "contact-field-5",
+        "type": "textFormField",
+        "props": { "id": "message", "label": "الرسالة", "hint": "", "maxLines": 5, "minLines": 3, "textDirection": "rtl" }
+      },
+      {
+        "id": "contact-submit-6",
         "type": "button",
         "props": { "label": "إرسال", "height": 48, "variant": "elevated", "fullWidth": true },
         "tap": { "type": "apiCall", "method": "POST", "url": "/api/v1/public/contact", "requireValidForm": true, "formId": "contact-form" }
@@ -1236,8 +1338,34 @@ When `backgroundImage` is present on a `Section`:
 }
 ```
 
+- **`textFormField` field key is `props.id`** — the renderer registers the field value in `FormStateStore` under this key. Never use `name`.
 - Email field always gets `textDirection: "ltr"`.
 - `submitUrl` prop overrides the default `/api/v1/public/contact`.
+
+**Full `textFormField` prop reference:**
+
+| Prop | Type | Notes |
+|------|------|-------|
+| `id` | string | **Required.** Field identifier used in form payload |
+| `label` | string | Field label |
+| `hint` | string | Placeholder text |
+| `textDirection` | `"ltr"` \| `"rtl"` | Always `"ltr"` for email/phone/OTP |
+| `keyboardType` | `"email"` \| `"phone"` \| `"number"` \| `"text"` | |
+| `obscureText` | boolean | For passwords |
+| `maxLines` / `minLines` | number | Multi-line textarea |
+| `maxLength` | number | Character cap |
+| `prefixIcon` / `suffixIcon` | string | Material icon name |
+| `prefixText` / `suffixText` | string | e.g. phone prefix `"+966"` |
+| `clearable` | boolean | Show clear button |
+| `shadow` | `"none"` \| `"sm"` \| `"md"` \| `"lg"` \| `"xl"` | |
+| `validateRequired` | boolean | |
+| `validateEmail` | boolean | |
+| `validatePhone` | boolean | |
+| `validatePassword` | boolean | |
+| `validatePattern` | string | Regex pattern |
+| `requiredMessage` | string | Custom required error text |
+| `validationMessage` | string | Custom validation error text |
+| `onSubmitted` | action | Action fired on keyboard submit |
 
 ---
 
@@ -1348,6 +1476,23 @@ Sidebar is emitted as an inline `column` (the `dock` prop is ignored with a warn
 
 ---
 
+### 6.29 Timer
+
+Emit `timer` **only** when the page input explicitly defines a redirect or delay. Do not invent a redirect target.
+
+```json
+{
+  "id": "splash-timer-1",
+  "type": "timer",
+  "props": {
+    "durationMs": 3000,
+    "tap": { "type": "navigate", "route": "<page-defined-target>", "navigation_type": "replace" }
+  }
+}
+```
+
+---
+
 ## 7. Page Envelope Structure
 
 When the input is a page object or array of page objects, the converter emits a full app config:
@@ -1427,6 +1572,7 @@ When the input is a page object or array of page objects, the converter emits a 
 | Default scroll | `"vertical"` |
 | Auth / splash pages | Set `"scroll": "none"` on page input |
 | `background` default | `"#ffffff"` |
+| Page chrome | Use page-level `background` + `scroll` — **never** emit a `scaffold` node in `body[]` |
 
 ### `appBar` structure
 
@@ -1438,7 +1584,6 @@ The `appBar` is built from the page `SiteHeader` block and `rootProps`:
   "type": "appBar",
   "props": {
     "title": "SOOQ",
-    "showBackButton": false,
     "backgroundColor": "#ffffff",
     "foregroundColor": "#0f172a",
     "elevation": 0,
@@ -1451,11 +1596,25 @@ The `appBar` is built from the page `SiteHeader` block and `rootProps`:
 }
 ```
 
+> **Back button:** The back arrow appears automatically when the navigation stack can pop (`GoRouter.canPop()`). No prop controls it. In RTL, it renders on the visual **right** (the bar layout is internally LTR).
+
 | Field | Condition |
 |-------|-----------|
-| `showBackButton: true` | any route that is not `/home` |
 | `showMenu: true` + `menuAction` | `rootProps.headerShowDrawerButton: "on"` OR a `SiteDrawerShell` block is present |
 | `showCartIcon: true` + `cartBadgePath` + `cartAction` | always (unless `rootProps.headerShowCart: "off"`) |
+
+**Wishlist / favorite toggle** (product detail pages):
+
+| Prop | Notes |
+|------|-------|
+| `trailingIconActivePath` | dataContext boolean path (e.g. `wishlist.isCurrentProductFavorite`) |
+| `trailingIconActive` / `trailingIconInactive` | icon names for on/off (defaults `favorite` / `favorite_outline`) |
+| `trailingActiveColor` | icon hex when active |
+| `trailingAction` | tap action |
+| `cartVisiblePath` / `cartVisibleWhen` | conditional cart-icon visibility |
+| `titleAlign` | `start` (default) \| `center` \| `end` |
+
+**RTL layout note:** appBar is internally LTR — cart + trailing icons render on the visual **left**, menu/back on the visual **right**. This is intended for Arabic apps.
 
 ### `appDrawer` structure
 
@@ -1661,8 +1820,8 @@ Absolute admin URLs in `metadata.apiUrl` are automatically rewritten to relative
 
 | Web block | Mobile output | Note |
 |-----------|---------------|------|
-| `CategoryListMenu` | `{ "type": "unsupported", "props": { "blockType": "CategoryListMenu" } }` + warning | No static decomposition |
-| `ProductSearchMenu` | `{ "type": "unsupported", "props": { "blockType": "ProductSearchMenu" } }` + warning | Needs cubit wiring |
+| `CategoryListMenu` | `{ "type": "unsupported", "props": { "blockType": "CategoryListMenu" } }` + warning | No static decomposition. If this merchant has a categories screen, wire a navigate button manually; otherwise omit the block. |
+| `ProductSearchMenu` | `{ "type": "unsupported", "props": { "blockType": "ProductSearchMenu" } }` + warning | Needs cubit wiring. If this merchant has a search screen, wire manually; otherwise omit. |
 | `SideDrawer` | Handled as `SiteDrawerShell` (generates `appDrawer`) | |
 | `Blank` | `null` (omitted entirely) | |
 | `SiteHeader` | Not in `body[]` — used to build `appBar` | |
@@ -1678,7 +1837,8 @@ Absolute admin URLs in `metadata.apiUrl` are automatically rewritten to relative
 The converter accumulates warnings and returns them in `{ success: true, output: ..., warnings: ["..."] }`. Watch for:
 
 - `"Nested Section detected; converted as sibling container"`
-- `"Block type \"CategoryListMenu\" has no mobile equivalent; rendered as unsupported"`
+- `"Block type \"CategoryListMenu\" has no mobile equivalent; rendered as unsupported. If this merchant has a categories screen, wire a navigate button manually; otherwise omit the block."`
+- `"Block type \"ProductSearchMenu\" has no mobile equivalent; rendered as unsupported. If this merchant has a search screen, wire manually; otherwise omit."`
 - `"Sidebar dock prop is ignored on mobile; rendered as inline column"`
 - `"Testimonials CMS source not supported; using inline items only"`
 - `"Unknown block type \"<X>\"; converted children only"`
@@ -1692,62 +1852,54 @@ Use this checklist before sending converter output to the engine.
 
 ### Schema / parse
 
-- [ ] All `type` values are from the allowed list (Section 2)
+- [ ] All `type` values are from Section 2 — **`scaffold` is NOT valid output**
 - [ ] Every node has `id`, `type`, `props`
 - [ ] No `child` + `children` on the same node
-- [ ] No `style` wrapper — only flat `props`
-- [ ] No web block type names in output (`Button`, `Section`, `ContentParagraph`, etc.)
+- [ ] Prefer flat `props`; `style` object only for: `padding`, `margin`, `borderRadius`, `border`, `shadow`, `background`/`color`, `width`, `height`
+- [ ] No web block type names in output
 
 ### Props / values
 
-- [ ] No `"theme-*"` strings anywhere in output
-- [ ] No CSS `px` strings — all numbers
-- [ ] No `colorMode` / `colorTheme` / `colorFixed` — hex only
-- [ ] `mainAxisAlignment` / `crossAxisAlignment` full names (not `mainAxis` / `crossAxis`)
-- [ ] Button `variant` is `elevated`, `filled`, `outlined`, or `text`
-- [ ] `image.url` present (not `src`)
-- [ ] `image.semanticsLabel` (not `alt`)
-- [ ] `text.value` present (not `text` prop)
-- [ ] `richtext.value` (not `richtext` prop)
-- [ ] `imageSlider.autoPlay` (capital P) and `intervalMs`
-- [ ] `videoPlayer.showControls` (not `controls`)
-- [ ] `videoPlayer.autoplay` (lowercase p)
-- [ ] `sizedBox.height` / `sizedBox.width` are numbers
-- [ ] `divider.thickness` is a number (not `"1px"`)
-- [ ] `gridView.crossAxisCount` is a number (not `"3"`)
+- [ ] No `theme-*` strings, no `px` strings, no `colorMode`/`colorTheme`/`colorFixed`
+- [ ] Prefer canonical `mainAxisAlignment`/`crossAxisAlignment`/`textAlign` (shorthand is engine-accepted)
+- [ ] Font weight ∈ { `w100`–`w900`, `light`, `normal`, `medium`, `semibold`, `bold` } — **no camelCase, no `thin`/`extraBold`/`black`**
+- [ ] Web `semibold` → `"semibold"` or `"w600"` (not `"bold"`)
+- [ ] Button `variant` ∈ { `elevated`, `filled`, `outlined`, `text` }
+- [ ] `image.url` (not `src`); `image.semanticsLabel` or `alt`
+- [ ] `text.value` / `richtext.value` (not `text`/`richtext`)
+- [ ] `imageSlider.autoPlay` (capital P), `imageSlider.images[].url`
+- [ ] `videoPlayer.showControls` / `autoplay` (drop `loop`/`muted` — not read)
+
+### Forms
+
+- [ ] `textFormField` field key is `props.id` (**never `name`**)
+- [ ] `form` uses `props.formId` (production also mirrors it as `id`; both accepted, renderer reads `formId` first)
+- [ ] Submit button `tap.formId` matches the form's `formId`
+- [ ] `form` uses `child` OR `children`, not both
 
 ### Actions
 
-- [ ] All navigation on node-level `tap`, not inside `props`
-- [ ] No `buttonAction`, `link`, `href` in `props`
-- [ ] YouTube → `image` + `tap.openUrl`, not `videoPlayer`
-- [ ] `addToCart` → `cubitCall` cart
-- [ ] `logout` → `cubitCall` auth with `onSuccess` navigate
+- [ ] Navigation/actions on node-level `tap`, never in `props`
+- [ ] No `buttonAction`/`link`/`href` in `props`
+- [ ] YouTube → `image` + `tap.openUrl`
+- [ ] `addToCart` → `cubitCall` cart; `logout` → `cubitCall` auth + `onSuccess` navigate
+
+### Page assembly
+
+- [ ] `appBar` is a page-level key (sibling of `body`), not inside `body[]`
+- [ ] No `showBackButton` emitted (back arrow is automatic)
+- [ ] No `scaffold` node; page background/scroll via page-level keys
+- [ ] `SiteDrawerShell` → page-level `appDrawer`
 
 ### API / data
 
-- [ ] Relative paths only (`/api/v1/public/...`, `/api/v1/customer/...`)
-- [ ] No absolute admin URLs
-- [ ] `requestKey` + `requestUrl` flat in `props` on data-bound `gridView` / `listView`
-- [ ] `itemBuilder.source` uses `dataContext.requests.<requestKey>.data`
-- [ ] Cart items use `source: "cart.items"` (not an API call)
-- [ ] Orders URL includes `?page=0&size=<n>`
+- [ ] Relative paths only; `requestKey` + `requestUrl` flat in `props`
+- [ ] `itemBuilder.source` = `dataContext.requests.<requestKey>.data`; cart uses `cart.items`
 
-### Layout
+### Merchant-specific (no assumptions)
 
-- [ ] `visible: false` sections are absent from output
-- [ ] Section background on `container.props.color`
-- [ ] Accordion → `column` + `expansionTile` children
-- [ ] `imageSlider.images[].url` (not `.src`)
-- [ ] `ProductsGrid` → `gridView` with `childAspectRatio: 0.75`
-- [ ] `CartSection` → `listView` with `source: "cart.items"`
-
-### Shell / chrome
-
-- [ ] `SiteHeader` not in `body[]` — only as `appBar` key on page
-- [ ] `SiteDrawerShell` not in `body[]` — only as `appDrawer` key on page
-- [ ] `appBar.showMenu` / `menuAction` present when drawer is configured
-- [ ] `appBar.showCartIcon` / `cartBadgePath` / `cartAction` present on catalog pages
+- [ ] No hard-coded route targets that may not exist in this merchant's `pages[]`
+- [ ] Blocks with no automatic equivalent → `unsupported` + a clear warning (not a guessed navigate button)
 
 ---
 
@@ -1766,10 +1918,12 @@ These are by design — the mobile team should not expect different output for t
 | `anchorId` on Section | No in-page anchor scroll on mobile |
 | `align` / `maxWidth` on `image` | Wrap image in `container` instead |
 | `CheckoutForm` as single page | Multi-route flow: `/checkout`, `/checkout/address`, `/checkout/payment` |
-| `CategoryListMenu` | Runtime category data — emits `unsupported` node |
-| `ProductSearchMenu` | Needs cubit + search field wiring — emits `unsupported` node |
+| `CategoryListMenu` | Runtime category data — emits `unsupported` node. Do **not** auto-navigate to `/categories`; wire manually per merchant. |
+| `ProductSearchMenu` | Needs cubit + search field wiring — emits `unsupported` node. Do **not** auto-navigate to `/search`; wire manually per merchant. |
 | Wishlist `itemBuilder.item` | Empty object `{}` — renderer builds its own template |
+| Heading `w600` | Valid engine font weight — do not downgrade to `bold` |
+| `CategoryListMenu` / `ProductSearchMenu` auto-navigate | **Retracted** — merchants define their own routes; guessing routes causes dead taps |
 
 ---
 
-*Source: `lib/transformer.ts` — last updated 2026-07-01. Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*
+*Source: `lib/transformer.ts` — last updated 2026-07-02. Revised per mobile team review (`CONVERTER-SPEC-REVIEW-2026-07-01.md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*

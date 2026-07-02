@@ -173,11 +173,11 @@ function resolveThemeFontWeight(weight: string | undefined): string | undefined 
   const map: Record<string, string> = {
     "theme-light": "normal",
     "theme-normal": "normal",
-    "theme-semibold": "bold",
+    "theme-semibold": "semibold",
     "theme-bold": "bold",
     light: "normal",
     normal: "normal",
-    semibold: "bold",
+    semibold: "semibold",
     bold: "bold",
   };
   return map[weight] || resolveFontWeight(weight);
@@ -228,7 +228,7 @@ function normalizeAdminApiUrl(apiUrl: string): string {
 }
 
 const FONT_WEIGHT_MAP: Record<string, string> = {
-  normal: "normal", medium: "medium", semibold: "bold", bold: "bold",
+  normal: "normal", medium: "medium", semibold: "semibold", bold: "bold",
 };
 function resolveFontWeight(weight: string | undefined): string | undefined {
   return FONT_WEIGHT_MAP[weight || ""];
@@ -602,8 +602,6 @@ function transformVideo(block: Record<string, unknown>, rootProps: Record<string
     url: (props.src as string) || "",
     showControls: (props.controls as string) !== "off",
     autoplay: (props.autoPlay as string) === "on",
-    loop: (props.loop as string) === "on",
-    muted: (props.muted as string) === "on",
   };
   if (props.poster) outProps.poster = props.poster;
   if (props.borderRadius) outProps.borderRadius = props.borderRadius;
@@ -1528,22 +1526,28 @@ function transformCheckoutForm(block: Record<string, unknown>, rootProps: Record
   ];
   const submissionAction = props.submissionAction as Record<string, unknown> | undefined;
 
-  const fieldNodes = fields.map((field) => ({
-    id: generateId("cf-field"),
-    type: "textFormField",
-    props: {
+  const fieldNodes = fields.map((field) => {
+    const fieldId = (field.name as string) || "";
+    const fieldProps: Record<string, unknown> = {
+      id: fieldId,
       label: (field.label as string) || "",
       hint: (field.placeholder as string) || "",
-      name: (field.name as string) || "",
-      textDirection: (field.type as string) === "email" || (field.name as string) === "phone" ? "ltr" : "rtl",
-      ...((field.required as boolean) ? { validator: "required" } : {}),
-    },
-  }));
+      textDirection: fieldId === "email" || fieldId === "phone" ? "ltr" : "rtl",
+    };
+    if (fieldId === "email") {
+      fieldProps.keyboardType = "email";
+      fieldProps.validateEmail = true;
+    }
+    if ((field.required as boolean) || fieldId === "name" || fieldId === "email" || fieldId === "phone") {
+      fieldProps.validateRequired = true;
+    }
+    return { id: generateId("cf-field"), type: "textFormField", props: fieldProps };
+  });
 
   const node: Record<string, unknown> = {
     id: generateId("checkout-form"),
     type: "form",
-    props: { id: "checkout-address-form" },
+    props: { formId: "checkout-address-form", id: "checkout-address-form" },
     child: {
       id: generateId("cf-fields"),
       type: "column",
@@ -2308,21 +2312,32 @@ function transformContactForm(block: Record<string, unknown>, rootProps: Record<
     { name: "message", label: lang === "ar" ? "الرسالة" : "Message" },
   ];
 
-  const fieldNodes = fields.map((field) => ({
-    id: generateId("contact-field"),
-    type: "textFormField",
-    props: {
+  const fieldNodes = fields.map((field) => {
+    const fieldId = (field.name as string) || "";
+    const fieldProps: Record<string, unknown> = {
+      id: fieldId,
       label: (field.label as string) || "",
       hint: (field.placeholder as string) || "",
-      name: (field.name as string) || "",
-      textDirection: (field.name as string) === "email" ? "ltr" : ((rootProps.direction as string) === "rtl" ? "rtl" : "ltr"),
-    },
-  }));
+      textDirection: fieldId === "email" ? "ltr" : ((rootProps.direction as string) === "rtl" ? "rtl" : "ltr"),
+    };
+    if (fieldId === "email") {
+      fieldProps.keyboardType = "email";
+      fieldProps.validateEmail = true;
+    }
+    if (fieldId === "name" || fieldId === "email") {
+      fieldProps.validateRequired = true;
+    }
+    if (fieldId === "message") {
+      fieldProps.maxLines = 5;
+      fieldProps.minLines = 3;
+    }
+    return { id: generateId("contact-field"), type: "textFormField", props: fieldProps };
+  });
 
   const node: Record<string, unknown> = {
     id: generateId("contact-form"),
     type: "form",
-    props: { id: formId },
+    props: { formId, id: formId },
     child: {
       id: generateId("contact-col"),
       type: "column",
@@ -2489,7 +2504,7 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
 
     default: {
       if (UNSUPPORTED_LEAF_BLOCKS.has(type)) {
-        addWarning(`Block type "${rawType}" has no mobile equivalent; rendered as unsupported`);
+        addWarning(`Block type "${rawType}" has no mobile equivalent; rendered as unsupported. If this merchant has a ${rawType === "CategoryListMenu" ? "categories" : "search"} screen, wire manually; otherwise omit the block.`);
         return { id: generateId("unsupported"), type: "unsupported", props: { blockType: rawType } };
       }
 
@@ -2673,7 +2688,6 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
 
   const appBarProps: Record<string, unknown> = {
     title: headerTitle || label,
-    showBackButton: path !== "/home",
     backgroundColor: headerBg,
     foregroundColor: headerFg,
     elevation: 0,

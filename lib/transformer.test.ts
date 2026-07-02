@@ -639,7 +639,9 @@ describe("transformWebToMobile", () => {
       const formCol = form.child as Record<string, unknown>;
       const fields = (formCol.children as Record<string, unknown>[]).filter((c) => c.type === "textFormField");
       expect(fields).toHaveLength(2);
-      expect((fields[0].props as Record<string, unknown>).validator).toBe("required");
+      expect((fields[0].props as Record<string, unknown>).id).toBe("email");
+      expect((fields[0].props as Record<string, unknown>).validateRequired).toBe(true);
+      expect((fields[0].props as Record<string, unknown>).validateEmail).toBe(true);
 
       const submitBtn = (formCol.children as Record<string, unknown>[]).find((c) => c.type === "button");
       expect(submitBtn).toBeDefined();
