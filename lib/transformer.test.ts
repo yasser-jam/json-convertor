@@ -210,7 +210,7 @@ describe("transformWebToMobile", () => {
   });
 
   describe("block: Link", () => {
-    it("converts link to ghost button", () => {
+    it("converts link to text variant button", () => {
       const input = {
         path: "/link-test",
         label: "Link Test",
@@ -229,7 +229,7 @@ describe("transformWebToMobile", () => {
       const body = (output.pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
       const link = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0];
       expect(link.type).toBe("button");
-      expect((link.props as Record<string, unknown>).variant).toBe("ghost");
+      expect((link.props as Record<string, unknown>).variant).toBe("text");
     });
   });
 
@@ -463,7 +463,7 @@ describe("transformWebToMobile", () => {
   });
 
   describe("block: SiteFooter", () => {
-    it("is stripped from body and appended at end", () => {
+    it("is stripped from body and placed on page footer", () => {
       const input = {
         path: "/footer-test",
         label: "Footer Test",
@@ -480,10 +480,12 @@ describe("transformWebToMobile", () => {
       };
       const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
       const output = result.output as Record<string, unknown>;
-      const body = (output.pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const page = (output.pages as Record<string, unknown>[])[0];
+      const body = page.body as Record<string, unknown>[];
 
-      expect(body).toHaveLength(1);
-      expect(body[0].type).toBe("container");
+      expect(body).toHaveLength(0);
+      expect(page.footer).toBeDefined();
+      expect((page.footer as Record<string, unknown>).type).toBe("container");
     });
 
     it("returns null when footerVisible is false", () => {
@@ -527,7 +529,7 @@ describe("transformWebToMobile", () => {
   });
 
   describe("block: Grid (non-commerce)", () => {
-    it("converts to column of rows", () => {
+    it("converts to gridView", () => {
       const input = {
         path: "/grid-test",
         label: "Grid",
@@ -536,7 +538,7 @@ describe("transformWebToMobile", () => {
           {
             type: "Section",
             props: { paddingTop: "0", paddingBottom: "0", content: [
-              { type: "Grid", props: { columns: "2", gap: 8, items: [
+              { type: "Grid", props: { numColumns: 2, gap: 8, items: [
                 { type: "Text", props: { text: "1" } },
                 { type: "Text", props: { text: "2" } },
                 { type: "Text", props: { text: "3" } },
@@ -548,12 +550,10 @@ describe("transformWebToMobile", () => {
       const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
       const output = result.output as Record<string, unknown>;
       const body = (output.pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
-      const gridChildren = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0] as Record<string, unknown>;
-      // Should be a column containing rows
-      expect(gridChildren.type).toBe("column");
-      const rows = gridChildren.children as Record<string, unknown>[];
-      expect(rows).toHaveLength(2); // 3 items in 2 columns = 2 rows
-      expect(rows[0].type).toBe("row");
+      const gridNode = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0] as Record<string, unknown>;
+      expect(gridNode.type).toBe("gridView");
+      expect((gridNode.props as Record<string, unknown>).crossAxisCount).toBe(2);
+      expect((gridNode.children as Record<string, unknown>[])).toHaveLength(3);
     });
   });
 
@@ -973,6 +973,115 @@ describe("transformWebToMobile", () => {
         const sidebar = (((body[0].body as Record<string, unknown>[])[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0];
         expect(sidebar.type).toBe("column");
       }
+    });
+  });
+
+  describe("BLOCKS.md commerce and engine features", () => {
+    it("omits button height for md size", () => {
+      const input = {
+        path: "/btn-md",
+        label: "Btn",
+        rootProps: { language: "en", direction: "ltr", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: { paddingTop: "0", paddingBottom: "0", content: [
+            { type: "Button", props: { label: "Go", size: "md", href: "/x" } },
+          ]},
+        }],
+      };
+      const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const btn = (((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0]);
+      expect((btn.props as Record<string, unknown>).height).toBeUndefined();
+    });
+
+    it("maps valueContext on ContentHeading inside bound Group", () => {
+      const input = {
+        path: "/vc",
+        label: "VC",
+        rootProps: { language: "ar", direction: "rtl", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: { paddingTop: "0", paddingBottom: "0", content: [{
+            type: "Group",
+            props: {
+              product: { id: "p1", titleAr: "قميص" },
+              content: [{
+                type: "ContentHeading",
+                props: { text: "fallback", valueContext: { path: "product.title" } },
+              }],
+            },
+          }]},
+        }],
+      };
+      const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const heading = (((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0].children as Record<string, unknown>[])[0];
+      expect((heading.props as Record<string, unknown>).valuePath).toBe("item.name");
+    });
+
+    it("maps makeOrder button to page footer", () => {
+      const input = {
+        path: "/cart",
+        label: "Cart",
+        rootProps: { language: "ar", direction: "rtl", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: {
+            metadata: { preset: "shopping-cart" },
+            content: [{
+              type: "ContentButton",
+              props: {
+                label: "إتمام الطلب",
+                destinationType: "action",
+                buttonAction: "makeOrder",
+              },
+            }],
+          },
+        }],
+      };
+      const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
+      const page = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0];
+      expect(page.footer).toBeDefined();
+      expect(((page.footer as Record<string, unknown>).child as Record<string, unknown>).type).toBe("button");
+    });
+
+    it("converts RowGroup to row layout", () => {
+      const input = {
+        path: "/rowgroup",
+        label: "RG",
+        rootProps: { language: "en", direction: "ltr", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: { paddingTop: "0", paddingBottom: "0", content: [{
+            type: "RowGroup",
+            props: { content: [{ type: "Text", props: { text: "A" } }] },
+          }]},
+        }],
+      };
+      const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const row = (((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0]);
+      expect(row.type).toBe("row");
+    });
+
+    it("maps cartQtyIncrease to cubitCall", () => {
+      const input = {
+        path: "/cart-qty",
+        label: "Qty",
+        rootProps: { language: "en", direction: "ltr", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: { paddingTop: "0", paddingBottom: "0", content: [{
+            type: "ContentButton",
+            props: { label: "+", destinationType: "action", buttonAction: "cartQtyIncrease" },
+          }]},
+        }],
+      };
+      const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const btn = (((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0]);
+      expect((btn.tap as Record<string, unknown>).method).toBe("increaseQuantity");
     });
   });
 });

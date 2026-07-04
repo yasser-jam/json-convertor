@@ -6,12 +6,15 @@ Each block is described with its **properties**, accepted **values**, and a read
 > Most blocks wrap their props with a `WithLayout` higher-order type that adds a shared `layout` object. The `layout` prop controls advanced positioning (padding, shadow, float, per-breakpoint visibility via `hideOnMobile` / `hideOnTablet` / `hideOnDesktop`, etc.). It is omitted from the examples below for brevity; add it only when you need non-default positioning.
 
 > **Block registry**  
-> Blocks registered in the editor are grouped as: **layout** (`Section`, `Group`, `Sidebar`), **blocks** (content primitives), **storeBlocks** (commerce/customer), **shell** (`SiteHeader`, `SiteDrawerShell`, `SiteFooter`), and **legacy** (hidden from the picker but still rendered from old `store_config.json`). `Blank` exists in code only and is **not** registered — it will not appear in published store config.
+> Blocks registered in the editor are grouped as: **layout** (`Section`, `Group`, `RowGroup`), **blocks** (content primitives), **storeBlocks** (commerce/customer), and **legacy** (hidden). **Site zones** (`SiteHeader`, `SiteFooter`, `ZoneDrawer`, `ZonePopup`, `ZoneBottomSheet`) are managed via the **المناطق** sidebar plugin — not the blocks palette. See [ZONES.md](./ZONES.md).
 >
-> **Legacy blocks** (still in `store_config.json`, hidden from picker): `SideDrawer`, `Heading`, `Text`, `RichText`, `Button`, `Card`, `Grid`, `Flex`, `Hero`, `Logos`, `Stats`, `Template`, `NavMenu`, `ContentIcon`, `ContentHtml`, `ProductImage`, `ProductInfo`.
+> **Legacy blocks** (still in `store_config.json`, hidden from picker): `ProductsGrid`, `ProductCard`, `CartSection`, `CartList`, `CartItem`, `CartQuantity`, `CartIconButton`, `SiteDrawerShell`, `SideDrawer`, `Heading`, `Text`, `RichText`, `Button`, `Card`, `Grid`, `Flex`, `Hero`, `Logos`, `Stats`, `Template`, `NavMenu`, `ContentIcon`, `ContentHtml`, `ProductImage`, `ProductInfo`.
 
-> **Runtime metadata**  
-> `ProductCard` and `ProductsGrid` auto-populate a read-only `metadata` object when a product/collection is selected. Mobile converters should use `metadata.apiUrl` to fetch live data at render time rather than embedding product payloads in JSON.
+> **Runtime metadata & data binding**  
+> Commerce sections use **`Group`** blocks as binding roots — not standalone `ProductCard` / `ProductsGrid` blocks. When a product is picked on a Group, the editor auto-populates read-only `metadata` with `apiUrl`. Child blocks (`ContentHeading`, `ContentParagraph`, `ContentImage`, `ContentButton`) resolve live values via optional `valueContext.path` against the Group's bound data. Mobile converters should fetch from `metadata.apiUrl` at render time rather than embedding product payloads in JSON.
+>
+> **Commerce section presets (preferred)**  
+> Insert via Design Studio → **Products Grid** or **Shopping Cart** section presets. Both are `Section` blocks with `metadata.preset` set. Legacy standalone blocks `ProductsGrid`, `ProductCard`, and `CartSection` remain in old `store_config.json` but are hidden from the block picker.
 
 ---
 
@@ -20,46 +23,52 @@ Each block is described with its **properties**, accepted **values**, and a read
 1. [Accordion](#accordion)
 2. [Blank](#blank)
 3. [Button](#button)
-4. [Card](#card)
-5. [CartSection](#cartsection)
-6. [CategoryListMenu](#categorylistmenu)
-7. [CheckoutForm](#checkoutform)
-8. [ContactForm](#contactform)
-9. [ContentButton](#contentbutton)
-10. [ContentDivider](#contentdivider)
-11. [ContentHeading](#contentheading)
-12. [ContentHtml](#contenthtml)
-13. [ContentIcon](#contenticon)
-14. [ContentImage](#contentimage)
-15. [ContentParagraph](#contentparagraph)
-16. [Flex](#flex)
-17. [Grid](#grid)
-18. [Group](#group)
-19. [Heading](#heading)
-20. [Hero](#hero)
-21. [ImageGallery](#imagegallery)
-22. [Logos](#logos)
-23. [NavMenu](#navmenu)
-24. [OrderHistory](#orderhistory)
-25. [ProductCard](#productcard)
-26. [ProductImage](#productimage)
-27. [ProductInfo](#productinfo)
-28. [ProductSearchMenu](#productsearchmenu)
-29. [ProductsGrid](#productsgrid)
-30. [RichText](#richtext)
-31. [Section](#section)
-32. [Sidebar](#sidebar)
-33. [SideDrawer](#sidedrawer)
-34. [SiteDrawerShell](#sitedrawershell)
-35. [SiteFooter](#sitefooter)
-36. [SiteHeader](#siteheader)
-37. [Space](#space)
-38. [Stats](#stats)
-39. [Template](#template)
-40. [Testimonials](#testimonials)
-41. [Text](#text)
-42. [VideoEmbed](#videoembed)
-43. [Wishlist](#wishlist)
+4. [CartIconButton](#carticonbutton)
+5. [Card](#card)
+6. [CartSection](#cartsection)
+7. [CategoryListMenu](#categorylistmenu)
+8. [CheckoutForm](#checkoutform)
+9. [ContactForm](#contactform)
+10. [ContentButton](#contentbutton)
+11. [ContentDivider](#contentdivider)
+12. [ContentHeading](#contentheading)
+13. [ContentHtml](#contenthtml)
+14. [ContentIcon](#contenticon)
+15. [ContentImage](#contentimage)
+16. [ContentParagraph](#contentparagraph)
+17. [Flex](#flex)
+18. [Grid](#grid)
+19. [Group](#group)
+20. [RowGroup](#rowgroup)
+21. [Heading](#heading)
+22. [Hero](#hero)
+23. [ImageGallery](#imagegallery)
+24. [LoginButton](#loginbutton)
+25. [Logos](#logos)
+26. [NavMenu](#navmenu)
+27. [OrderHistory](#orderhistory)
+28. [ProductCard](#productcard)
+29. [ProductImage](#productimage)
+30. [ProductInfo](#productinfo)
+31. [ProductSearchMenu](#productsearchmenu)
+32. [ProductsGrid](#productsgrid)
+33. [RichText](#richtext)
+34. [Section](#section)
+35. [Sidebar](#sidebar)
+36. [SideDrawer](#sidedrawer)
+37. [SiteDrawerShell](#sitedrawershell) *(legacy)*
+38. [SiteFooter](#sitefooter)
+39. [SiteHeader](#siteheader)
+40. [Space](#space)
+41. [Stats](#stats)
+42. [Template](#template)
+43. [Testimonials](#testimonials)
+44. [Text](#text)
+45. [VideoEmbed](#videoembed)
+46. [Wishlist](#wishlist)
+47. [ZoneBottomSheet](#zonebottomsheet)
+48. [ZoneDrawer](#zonedrawer)
+49. [ZonePopup](#zonepopup)
 
 ---
 
@@ -195,8 +204,41 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 ## CartSection
 
-**Label:** Cart Section  
-**Description:** Displays the current user's shopping cart items. Bound to cart data at render time.
+> **Legacy — use Shopping Cart section preset instead.**  
+> New stores should insert a `Section` with `metadata.preset: "shopping-cart"`. The preset builds an editable shell (heading, description, order button) plus one bound `Group` per cart line (`cartLineId`). See [Section — Shopping Cart preset](#section-shopping-cart-preset) and [Commerce data binding](#commerce-data-binding).
+
+**Label:** قسم السلة  
+**Description:** *(Legacy block.)* Renders shopping cart rows from browser `localStorage` key `store-cart`. Each row shows product image (right in RTL), title, description, price, link to `/products/:slug`, and quantity stepper. Includes subtotal and an order button that dispatches a `make-order` event.
+
+### Data source (`metadata`)
+
+| Field | Type | Notes |
+|---|---|---|
+| `metadata.dataSource` | `"localStorage"` | Always `localStorage` for this block |
+| `metadata.storageKey` | `"store-cart"` | Fixed key for cart persistence |
+
+### `store-cart` localStorage schema
+
+```json
+{
+  "items": [
+    {
+      "lineId": "prod-001:{\"Color\":\"Red\"}",
+      "quantity": 2,
+      "product": { "id": "...", "titleAr": "...", "slug": "...", "mediaUrls": ["..."], "currencyCode": "SYP" },
+      "selectedVariant": null,
+      "selectedAttributes": {},
+      "pricing": { "price": 10000, "compareAt": null, "discountPercent": 0, "hasDiscount": false },
+      "language": "ar",
+      "metadata": { "type": "product", "method": "get", "apiUrl": "...", "id": "..." },
+      "addedAt": "2026-07-02T12:00:00.000Z"
+    }
+  ],
+  "updatedAt": "2026-07-02T12:00:00.000Z"
+}
+```
+
+Items are added when product blocks dispatch the `add-product` browser event (e.g. `ContentButton` with `buttonAction: "addToCart"`).
 
 ### Properties
 
@@ -205,6 +247,13 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `layoutStyle` | `"rows" \| "cards"` | Display layout | `"rows"` |
 | `gap` | `"sm" \| "md" \| "lg" \| "xl"` | Space between items | `"md"` |
 | `showDividerLines` | `boolean` | Show separator lines | `true` |
+| `orderButtonLabel` | `string` | Label for the order CTA | `"إتمام الطلب"` |
+| `metadata` | `CartSectionResourceMetadata` | Auto-populated data source descriptor | see above |
+
+### Events
+
+- **`make-order`** — legacy `CartSection` order button only. Detail: `{ cart: StoreCart }`.
+- **Preferred:** `ContentButton` with `buttonAction: "makeOrder"` calls the store checkout action directly (no custom event).
 
 ### JSON Example
 
@@ -214,7 +263,12 @@ Each block is described with its **properties**, accepted **values**, and a read
   "props": {
     "layoutStyle": "rows",
     "gap": "md",
-    "showDividerLines": true
+    "showDividerLines": true,
+    "orderButtonLabel": "إتمام الطلب",
+    "metadata": {
+      "dataSource": "localStorage",
+      "storageKey": "store-cart"
+    }
   }
 }
 ```
@@ -328,9 +382,13 @@ Each block is described with its **properties**, accepted **values**, and a read
 |---|---|---|---|
 | `label` | `string` | Button text | `"زر"` |
 | `align` | `"left" \| "center" \| "right"` | Horizontal alignment | `"center"` |
-| `destinationType` | `"link" \| "action"` | Navigate to URL or trigger an action | `"link"` |
+| `destinationType` | `"link" \| "action" \| "zone"` | Navigate, trigger action, or open/close a zone | `"link"` |
 | `link` | `LinkValue` | Navigation target | `EMPTY_LINK` |
-| `buttonAction` | `ButtonAction` | In-app action key (when `destinationType = "action"`) | `"login"` |
+| `labelValueContext` | `ValueContext \| null` | Optional path-based label override (e.g. bound product title) | `null` |
+| `buttonAction` | `ButtonAction` | In-app action key (when `destinationType = "action"`): `login`, `logout`, `verifyOtp`, `addToCart`, `addToWishlist`, `makeOrder`, `cartQtyIncrease`, `cartQtyDecrease` | `"login"` |
+| `submitRedirectUrl` | `string` | Redirect after successful login / OTP / order | `""` |
+| `zoneKey` | `string` | Zone event key (when `destinationType = "zone"`) | `"login"` |
+| `zoneAction` | `"open" \| "close" \| "toggle"` | Zone event action | `"open"` |
 | `buttonVariantMode` | `"variant" \| "fixed"` | Use theme variant or manual colors | `"variant"` |
 | `buttonVariant` | `"primary" \| "secondary" \| "error"` | Theme variant | `"primary"` |
 | `buttonVariantSize` | `"sm" \| "md" \| "lg"` | Size when using variant mode | `"md"` |
@@ -352,6 +410,39 @@ Each block is described with its **properties**, accepted **values**, and a read
     "buttonVariantMode": "variant",
     "buttonVariant": "primary",
     "buttonVariantSize": "lg"
+  }
+}
+```
+
+### JSON Example (add to cart — inside product-bound Group)
+
+```json
+{
+  "type": "ContentButton",
+  "props": {
+    "label": "إضافة إلى السلة",
+    "align": "center",
+    "destinationType": "action",
+    "buttonAction": "addToCart",
+    "buttonVariantMode": "variant",
+    "buttonVariant": "primary"
+  }
+}
+```
+
+### JSON Example (cart quantity — inside cartLineId Group)
+
+```json
+{
+  "type": "ContentButton",
+  "props": {
+    "label": "+",
+    "align": "center",
+    "destinationType": "action",
+    "buttonAction": "cartQtyIncrease",
+    "buttonVariantMode": "fixed",
+    "buttonVariant": "secondary",
+    "buttonVariantSize": "sm"
   }
 }
 ```
@@ -396,7 +487,8 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `text` | `string` | Heading text | `"عنوان"` |
+| `text` | `string` | Heading text (static fallback) | `"عنوان"` |
+| `valueContext` | `ValueContext \| null` | When set, resolves `text` from the nearest bound `Group` ancestor | `null` |
 | `level` | `"1"…"6"` | Semantic HTML heading level (`h1`–`h6`) | `"2"` |
 | `textAlign` | `"left" \| "center" \| "right"` | Text alignment | `"right"` |
 | `fontFamily` | `"body" \| "option1" \| "option2"` | Font family | `"body"` |
@@ -493,8 +585,10 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `src` | `string` | Image URL | placeholder URL |
-| `alt` | `string` | Alt text | `""` |
+| `src` | `string` | Image URL (static fallback) | placeholder URL |
+| `valueContext` | `ValueContext \| null` | When set, resolves `src` from bound data (e.g. `images[0].url`) | `null` |
+| `alt` | `string` | Alt text (static fallback) | `""` |
+| `altValueContext` | `ValueContext \| null` | When set, resolves `alt` from bound data (e.g. `product.title`) | `null` |
 | `align` | `"left" \| "center" \| "right"` | Horizontal alignment | `"center"` |
 | `objectFit` | `"cover" \| "contain" \| "fill" \| "none" \| "scale-down"` | CSS object-fit | `"cover"` |
 | `radius` | `string` | Border radius (`"theme-md"` or pixel value) | `"theme-md"` |
@@ -527,7 +621,8 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `text` | `string` | Paragraph text | `"نص"` |
+| `text` | `string` | Paragraph text (static fallback) | `"نص"` |
+| `valueContext` | `ValueContext \| null` | When set, resolves `text` from the nearest bound `Group` ancestor | `null` |
 | `textAlign` | `"left" \| "center" \| "right"` | Text alignment | `"right"` |
 | `fontFamily` | `"body" \| "option1" \| "option2"` | Font family | `"body"` |
 | `fontSize` | `string` | `"theme-md"` or pixel value | `"theme-md"` |
@@ -621,7 +716,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 ## Group
 
 **Label:** مجموعة  
-**Description:** A flexible inline container (flexbox) for grouping blocks side-by-side or stacked.
+**Description:** A flexible flex container for grouping blocks. Can act as a **binding root** for product cards (`product` + `metadata`) or cart line rows (`cartLineId`). Child content blocks use `valueContext` to display live data.
 
 ### Properties
 
@@ -638,9 +733,100 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `padding` | `string` | Inner padding (spacing preset or px) | `"0px"` |
 | `borderRadius` | `string` | Corner radius (`"theme-none"` or px) | `"theme-none"` |
 | `boxShadow` | `"none" \| "sm" \| "md" \| "lg"` | Shadow preset | `"none"` |
+| `product` | `ProductPickerRef \| null` | Binds this Group to a product; children with `valueContext` resolve against fetched API data | `null` |
+| `metadata` | `ProductResourceMetadata \| null` | **Read-only.** Auto-populated when `product` is set | `null` |
+| `language` | `"ar" \| "en"` | Locale for shorthand paths like `product.title` → `product.titleAr` / `product.titleEn` | `"ar"` |
+| `cartLineId` | `string \| null` | Binds this Group to a `store-cart` line (cart section preset rows). Skips API fetch; maps line to bound data at runtime | `null` |
 | `content` | `Slot` | Child blocks (Section not allowed) | starter content |
 
-### JSON Example
+### Product & cart binding
+
+A `Group` with `product` set wraps its slot in a `BoundDataProvider`. The editor fetches product detail from `metadata.apiUrl` and child blocks resolve `valueContext.path` against that payload.
+
+A `Group` with `cartLineId` set binds to a line in `localStorage` key `store-cart` instead. Bound paths include `product.title`, `product.description`, `images[0].url`, `pricing.displayPrice`, `quantity`, and `lineId`. Cart quantity buttons use `buttonAction: "cartQtyIncrease"` / `"cartQtyDecrease"` on nested `ContentButton` blocks.
+
+### JSON Example (bound product card)
+
+```json
+{
+  "type": "Group",
+  "props": {
+    "direction": "column",
+    "gap": 12,
+    "product": { "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt", "slug": "classic-shirt" },
+    "metadata": {
+      "type": "product",
+      "method": "get",
+      "id": "prod_01",
+      "apiUrl": "https://api.example.com/public/products/classic-shirt?include=PRICING&include=IMAGES"
+    },
+    "language": "ar",
+    "backgroundColor": "theme-surface",
+    "padding": "16px",
+    "borderRadius": "theme-md",
+    "boxShadow": "sm",
+    "content": [
+      {
+        "type": "ContentImage",
+        "props": {
+          "src": "https://placehold.co/400x400",
+          "valueContext": { "path": "images[0].url" },
+          "altValueContext": { "path": "product.title" }
+        }
+      },
+      {
+        "type": "ContentHeading",
+        "props": {
+          "text": "عنوان المنتج",
+          "valueContext": { "path": "product.title" }
+        }
+      },
+      {
+        "type": "ContentButton",
+        "props": {
+          "label": "إضافة إلى السلة",
+          "destinationType": "action",
+          "buttonAction": "addToCart"
+        }
+      }
+    ]
+  }
+}
+```
+
+### JSON Example (cart line row)
+
+```json
+{
+  "type": "Group",
+  "props": {
+    "direction": "row",
+    "gap": 16,
+    "cartLineId": "prod-001:{\"Color\":\"Red\"}",
+    "language": "ar",
+    "content": [
+      {
+        "type": "ContentImage",
+        "props": {
+          "src": "https://placehold.co/144x144",
+          "valueContext": { "path": "images[0].url" },
+          "maxWidth": "72px"
+        }
+      },
+      {
+        "type": "ContentParagraph",
+        "props": {
+          "text": "1",
+          "valueContext": { "path": "quantity" },
+          "textAlign": "center"
+        }
+      }
+    ]
+  }
+}
+```
+
+### JSON Example (layout container)
 
 ```json
 {
@@ -657,6 +843,44 @@ Each block is described with its **properties**, accepted **values**, and a read
     "padding": "0px",
     "borderRadius": "theme-none",
     "boxShadow": "none",
+    "content": []
+  }
+}
+```
+
+---
+
+## RowGroup
+
+**Label:** صف أفقي  
+**Description:** A horizontal flex row container for grouping blocks side-by-side. Fixed `direction: row` (unlike `Group` which can be row or column).
+
+### Properties
+
+| Property | Type | Values / Notes | Default |
+|---|---|---|---|
+| `gap` | `number` | Gap in pixels (0–120) | `16` |
+| `alignItems` | `"flex-start" \| "center" \| "flex-end" \| "stretch" \| "baseline"` | Cross-axis alignment | `"center"` |
+| `justifyContent` | `"flex-start" \| "center" \| "flex-end" \| "space-between" \| "space-around" \| "space-evenly"` | Main-axis alignment | `"flex-start"` |
+| `wrap` | `"wrap" \| "nowrap"` | Whether items wrap | `"nowrap"` |
+| `backgroundColor` | `string` | Background (theme token or hex/rgba) | `""` |
+| `padding` | `string` | Inner padding (spacing preset or px) | `"0px"` |
+| `borderRadius` | `string` | Corner radius (`"theme-none"` or px) | `"theme-none"` |
+| `content` | `Slot` | Child blocks (Section not allowed) | `[]` |
+
+### JSON Example
+
+```json
+{
+  "type": "RowGroup",
+  "props": {
+    "gap": 16,
+    "alignItems": "center",
+    "justifyContent": "space-between",
+    "wrap": "nowrap",
+    "backgroundColor": "",
+    "padding": "0px",
+    "borderRadius": "theme-none",
     "content": []
   }
 }
@@ -927,8 +1151,11 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 ## ProductCard
 
+> **Legacy — use bound `Group` instead.**  
+> New product cards are `Group` blocks with `product` + `valueContext` on child content blocks. See [Group — Product & cart binding](#group) and [Products Grid section preset](#section-products-grid-preset).
+
 **Label:** بطاقة المنتج  
-**Description:** A single product card bound to a product via the product picker. Supports multiple layouts and extensive display controls.
+**Description:** *(Legacy block.)* A single product card bound to a product via the product picker. Supports multiple layouts and extensive display controls.
 
 ### Properties
 
@@ -1098,14 +1325,17 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 ## ProductsGrid
 
+> **Legacy — use Products Grid section preset instead.**  
+> New stores should insert a `Section` with `metadata.preset: "products-grid"` and a `collection` picker. The editor expands the section into one bound `Group` per product. See [Section — Products Grid preset](#section-products-grid-preset).
+
 **Label:** Products Grid  
-**Description:** A responsive grid of product cards sourced from a collection.
+**Description:** *(Legacy block.)* A responsive grid of product cards sourced from a collection.
 
 ### Properties
 
 | Property | Type | Values / Notes | Default |
 |---|---|---|---|
-| `collection` | `CollectionPickerRef \| null` | `{ id, name, productCount? }` from collection picker | `null` |
+| `collection` | `CollectionPickerRef \| null` | `{ id, name, slug, productCount? }` from collection picker | `null` |
 | `metadata` | `ProductsGridResourceMetadata \| null` | **Read-only.** Auto-populated when `collection` is set | `null` |
 | `columns` | `"1"…"6"` | Number of columns | `"3"` |
 | `maxRows` | `"0"…"10"` | Max rows, `"0"` = all | `"0"` |
@@ -1118,13 +1348,14 @@ Each block is described with its **properties**, accepted **values**, and a read
 {
   "type": "ProductsGrid",
   "props": {
-    "collection": { "id": "coll_featured", "name": "Featured", "productCount": 24 },
+    "collection": { "id": "coll_featured", "name": "Featured", "slug": "featured", "productCount": 24 },
     "metadata": {
       "type": "collection",
       "method": "get",
       "collectionId": "coll_featured",
+      "collectionSlug": "featured",
       "productCount": 24,
-      "apiUrl": "https://api.example.com/admin/collections/coll_featured/products?page=0&size=100"
+      "apiUrl": "https://api.example.com/public/collections/featured/products?page=0&size=100"
     },
     "columns": "4",
     "maxRows": "2",
@@ -1163,7 +1394,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 ## Section
 
 **Label:** قسم  
-**Description:** The primary page-level container. Wraps blocks in a full-width band with padding, background, grid columns, and optional anchor.
+**Description:** The primary page-level container. Wraps blocks in a full-width band with padding, background, grid columns, and optional anchor. Also hosts **commerce section presets** (products grid, shopping cart) identified by `metadata.preset`.
 
 ### Properties
 
@@ -1180,12 +1411,132 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `backgroundOverlayColor` | `string` | Color overlay on background image (supports rgba) | `""` |
 | `theme` | `"dark" \| "light"` | Text color tone inside section | `"dark"` |
 | `maxWidth` | `string` | Container max-width | `"1280px"` |
-| `columns` | `number \| string` | Grid column count (1–6) | `1` |
+| `columns` | `number \| string` | Grid column count (1–6). Auto-set when a collection fills the grid | `1` |
 | `columnsMobile` | `number \| string` | Grid columns at ≤768px viewport | `1` |
 | `gridGap` | `string` | Gap between columns | `"24px"` |
+| `metadata` | `SectionPresetMetadata \| null` | Identifies preset-driven sections — see below | `null` |
+| `sectionKind` | `"products-grid" \| "shopping-cart" \| null` | **Deprecated.** Prefer `metadata.preset` | `null` |
+| `collection` | `CollectionPickerRef \| null` | Selected collection (products-grid preset only) | `null` |
+| `cartSlotItems` | `ComponentData[] \| null` | Editable cart shell snapshot persisted for storefront re-render (shopping-cart preset) | `null` |
 | `content` | `Slot` | Child blocks (no nested Section) | starter content |
 
-### JSON Example
+### Section preset metadata
+
+```json
+{ "preset": "products-grid" }
+{ "preset": "shopping-cart" }
+```
+
+When `metadata.preset` is set, the section behaves as a commerce preset:
+
+| `preset` | Insert source | `resolveData` behaviour | Storefront render |
+|---|---|---|---|
+| `"products-grid"` | Design Studio → Products Grid | Fetches collection products by `collection.slug`; replaces `content` with one bound `Group` per product; sets `columns` (1–3) | Renders `content` slot as-is (editable groups) |
+| `"shopping-cart"` | Design Studio → Shopping Cart | Reads `store-cart` from localStorage; merges shell blocks + one `Group` per line into `content`; stores snapshot in `cartSlotItems` | Uses `CartSectionStorefront` to re-merge live cart lines with `cartSlotItems` shell at runtime |
+
+The HTML `<section>` element receives `data-section-preset="products-grid"` or `"shopping-cart"` for mobile converters.
+
+### Section: Products Grid preset
+
+Insert via Design Studio section catalog (`id: "products-grid"`). Merchant picks a collection; the editor auto-fills `content` with bound product card groups.
+
+```json
+{
+  "type": "Section",
+  "props": {
+    "name": "Featured",
+    "paddingTop": "48px",
+    "paddingBottom": "48px",
+    "columns": 3,
+    "columnsMobile": 1,
+    "gridGap": "24px",
+    "metadata": { "preset": "products-grid" },
+    "sectionKind": "products-grid",
+    "collection": {
+      "id": "coll_featured",
+      "name": "Featured",
+      "slug": "featured",
+      "productCount": 24
+    },
+    "content": [
+      {
+        "type": "Group",
+        "props": {
+          "product": { "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt", "slug": "classic-shirt" },
+          "metadata": {
+            "type": "product",
+            "method": "get",
+            "id": "prod_01",
+            "apiUrl": "https://api.example.com/public/products/classic-shirt?include=PRICING&include=IMAGES"
+          },
+          "direction": "column",
+          "gap": 12,
+          "backgroundColor": "theme-surface",
+          "padding": "16px",
+          "borderRadius": "theme-md",
+          "boxShadow": "sm",
+          "content": ["…bound ContentImage / ContentHeading / ContentButton blocks…"]
+        }
+      }
+    ]
+  }
+}
+```
+
+Each child `Group` is a fully editable product card. Merchants can restyle individual cards without breaking binding.
+
+### Section: Shopping Cart preset
+
+Insert via Design Studio section catalog (`id: "shopping-cart"`). Default shell: heading, description, and `ContentButton` with `buttonAction: "makeOrder"`. Cart line groups are injected before the order button.
+
+```json
+{
+  "type": "Section",
+  "props": {
+    "name": "سلة التسوق",
+    "maxWidth": "900px",
+    "paddingTop": "48px",
+    "paddingBottom": "48px",
+    "paddingHorizontal": "24px",
+    "columns": 1,
+    "metadata": { "preset": "shopping-cart" },
+    "sectionKind": "shopping-cart",
+    "cartSlotItems": ["…full content snapshot including line groups…"],
+    "content": [
+      {
+        "type": "ContentHeading",
+        "props": { "text": "سلة التسوق", "textAlign": "right", "fontSize": "theme-2xl" }
+      },
+      {
+        "type": "ContentParagraph",
+        "props": { "text": "راجع المنتجات في سلتك…", "textAlign": "right", "color": "theme-neutral" }
+      },
+      {
+        "type": "Group",
+        "props": {
+          "cartLineId": "prod-001:{\"Color\":\"Red\"}",
+          "direction": "row",
+          "gap": 16,
+          "content": ["…image, title, price, qty stepper…"]
+        }
+      },
+      {
+        "type": "ContentButton",
+        "props": {
+          "label": "إتمام الطلب",
+          "destinationType": "action",
+          "buttonAction": "makeOrder",
+          "align": "center"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Editor vs storefront:** In the editor, `resolveData` reads `store-cart` and injects demo line groups when the cart is empty. On the published storefront, `CartSectionStorefront` reads live cart lines, preserves merchant-edited shell blocks from `cartSlotItems`, and re-inserts line groups before the `makeOrder` button.
+
+### JSON Example (generic section)
 
 ```json
 {
@@ -1323,8 +1674,10 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 ## SiteDrawerShell
 
+> **Deprecated** — use `ZoneDrawer` instead. Kept in the legacy category for backward compatibility with old `store_config.json`. See [ZONES.md](./ZONES.md).
+
 **Label:** درج جانبي  
-**Description:** Site-level drawer shell (singleton). Configures the global side-navigation drawer registered in the site layout. Cannot be inserted, duplicated, or deleted by users.
+**Description:** Legacy site-level drawer shell. **Not recommended for new stores.** Use `ZoneDrawer` with a `slot` for flexible content.
 
 ### Properties
 
@@ -1417,6 +1770,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `variant` | `"commerce" \| "default"` | Layout style | `"commerce"` |
 | `language` | `"ar" \| "en"` | Display language | `"ar"` |
 | `visible` | `boolean` | Show/hide footer | `true` |
+| `is_mobile_only` | `boolean` | Show only on mobile viewports | `false` |
 | `tagline` | `string` | Tagline (EN) | `""` |
 | `taglineAr` | `string` | Tagline (AR) | `""` |
 | `showBottomBar` | `boolean` | Show bottom bar | `true` |
@@ -1440,6 +1794,7 @@ Each block is described with its **properties**, accepted **values**, and a read
     "variant": "commerce",
     "language": "ar",
     "visible": true,
+    "is_mobile_only": false,
     "tagline": "Your one-stop shop.",
     "taglineAr": "متجرك الشامل.",
     "showBottomBar": true,
@@ -1478,6 +1833,7 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `variant` | `"commerce" \| "default"` | Layout style | `"commerce"` |
 | `language` | `"ar" \| "en"` | Display language | `"ar"` |
 | `visible` | `boolean` | Show/hide header | `true` |
+| `is_mobile_only` | `boolean` | Show only on mobile viewports | `false` |
 | `brandHref` | `string` | Brand logo/title link | `"/"` |
 | `links` | `HeaderLink[]` | Nav links `[{ label, labelAr, link }]` | default links |
 | `backgroundColor` | `string` | Background color (empty = theme) | `""` |
@@ -1487,7 +1843,8 @@ Each block is described with its **properties**, accepted **values**, and a read
 | `navStyle` | `"underline" \| "pill"` | Nav hover/active styling | `"pill"` |
 | `showDrawerButton` | `boolean` | Show hamburger button | `false` |
 | `drawerButtonIcon` | `"menu" \| "filter" \| "cart" \| "user" \| "none"` | Icon type | `"menu"` |
-| `drawerName` | `string` | Target drawer name | `"site-drawer"` |
+| `drawerName` | `string` | Target zone/drawer key for menu button | `"site-drawer"` |
+| `rightSlot` | `Slot` | Nested blocks (e.g. `CartIconButton`, `LoginButton`) at header end | `[]` |
 
 ### JSON Example
 
@@ -1499,6 +1856,7 @@ Each block is described with its **properties**, accepted **values**, and a read
     "variant": "commerce",
     "language": "ar",
     "visible": true,
+    "is_mobile_only": false,
     "brandHref": "/",
     "links": [
       { "label": "Home", "labelAr": "الرئيسية", "link": { "kind": "page", "pageId": "/" } },
@@ -1512,10 +1870,97 @@ Each block is described with its **properties**, accepted **values**, and a read
     "navStyle": "pill",
     "showDrawerButton": true,
     "drawerButtonIcon": "menu",
-    "drawerName": "site-drawer"
+    "drawerName": "site-drawer",
+    "rightSlot": []
   }
 }
 ```
+
+---
+
+## CartIconButton
+
+> **Legacy in block picker** — still used inside `SiteHeader.rightSlot` in existing configs.
+
+**Label:** أيقونة السلة  
+**Description:** Cart icon with live item-count badge. Used inside `SiteHeader.rightSlot`. Listens to `store-cart-updated` events and reads `localStorage` key `store-cart`.
+
+| Property | Type | Default |
+|---|---|---|
+| `href` | `string` | `"/cart"` |
+| `iconSize` | `number` | `22` |
+| `badgeColor` | `string` | `"#ef4444"` |
+| `badgeTextColor` | `string` | `"#ffffff"` |
+
+---
+
+## LoginButton
+
+**Label:** زر تسجيل الدخول  
+**Description:** Shows guest label or logged-in user name from cookie. Used inside `SiteHeader.rightSlot` or login popups.
+
+| Property | Type | Default |
+|---|---|---|
+| `userNameCookie` | `string` | `"sooq-user-name"` |
+| `guestLabel` | `string` | `"تسجيل الدخول"` |
+| `showIcon` | `boolean` | `true` |
+| `textColor` | `string` | `"inherit"` |
+
+---
+
+## ZoneDrawer
+
+**Label:** درج المنطقة  
+**Description:** Site-wide slide-in drawer with slot content. Opens via `sooq:zone` events. See [ZONES.md](./ZONES.md).
+
+| Property | Type | Default |
+|---|---|---|
+| `is_active` | `boolean` | `false` |
+| `is_mobile_only` | `boolean` | `true` |
+| `key` | `string` | `"site-drawer"` |
+| `side` | `"left" \| "right"` | `"left"` |
+| `backgroundColor` | `string` | `"#ffffff"` |
+| `overlay` | `boolean` | `true` |
+| `showCloseButton` | `boolean` | `true` |
+| `slot` | `Slot` | `[]` |
+
+---
+
+## ZonePopup
+
+**Label:** نافذة منبثقة  
+**Description:** Centered modal overlay with slot content. Opens via `sooq:zone` events.
+
+| Property | Type | Default |
+|---|---|---|
+| `is_active` | `boolean` | `false` |
+| `is_mobile_only` | `boolean` | `false` |
+| `key` | `string` | `"login"` |
+| `backgroundColor` | `string` | `"#ffffff"` |
+| `borderRadius` | `string` | `"12px"` |
+| `maxWidth` | `string` | `"480px"` |
+| `overlay` | `boolean` | `true` |
+| `showCloseButton` | `boolean` | `true` |
+| `slot` | `Slot` | `[]` |
+
+---
+
+## ZoneBottomSheet
+
+**Label:** ورقة سفلية  
+**Description:** Bottom sheet overlay with slot content. Opens via `sooq:zone` events.
+
+| Property | Type | Default |
+|---|---|---|
+| `is_active` | `boolean` | `false` |
+| `is_mobile_only` | `boolean` | `true` |
+| `key` | `string` | `"cart-sheet"` |
+| `backgroundColor` | `string` | `"#ffffff"` |
+| `borderRadius` | `string` | `"16px 16px 0 0"` |
+| `maxHeight` | `string` | `"80vh"` |
+| `overlay` | `boolean` | `true` |
+| `showCloseButton` | `boolean` | `true` |
+| `slot` | `Slot` | `[]` |
 
 ---
 
@@ -1760,46 +2205,190 @@ Each block is described with its **properties**, accepted **values**, and a read
 
 ## Shared Concepts
 
-### ProductPickerRef
+### Commerce data binding
 
-Used by `ProductCard`, `ProductImage`, `ProductInfo`:
+Commerce UI is built from **`Section` presets** + bound **`Group`** blocks + **`valueContext`** on content children. Standalone `ProductsGrid`, `ProductCard`, and `CartSection` blocks are legacy.
+
+```mermaid
+flowchart TB
+  subgraph productsGrid ["Products Grid preset"]
+    PGSection["Section metadata.preset = products-grid"]
+    Collection["collection picker slug"]
+    PGSection --> Collection
+    Collection --> FetchProducts["fetchCollectionProductsBySlug"]
+    FetchProducts --> ProductGroups["Group per product + metadata.apiUrl"]
+    ProductGroups --> BoundChildren["ContentHeading / ContentImage / ContentButton with valueContext"]
+  end
+
+  subgraph shoppingCart ["Shopping Cart preset"]
+    CartSection["Section metadata.preset = shopping-cart"]
+    StoreCart["localStorage store-cart"]
+    CartSection --> Shell["Shell blocks: heading, makeOrder button"]
+    StoreCart --> LineGroups["Group per line with cartLineId"]
+    Shell --> Merge["mergeCartShellWithLineGroups"]
+    LineGroups --> Merge
+    Merge --> CartSlotItems["cartSlotItems snapshot"]
+  end
+
+  subgraph addToCart ["Add to cart flow"]
+    AddBtn["ContentButton buttonAction = addToCart"]
+    AddBtn --> BuildDetail["buildProductActionDetail from bound data"]
+    BuildDetail --> Event["window event: add-product"]
+    Event --> LS["localStorage store-cart"]
+    LS --> Updated["event: store-cart-updated"]
+  end
+```
+
+#### ValueContext
+
+Path-based binding for a block field. The nearest ancestor `Group` with `product` or `cartLineId` provides bound data.
 
 ```json
-{ "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt" }
+{ "path": "product.title", "fallbackToStatic": true }
+```
+
+| Path | Resolves to | Notes |
+|---|---|---|
+| `product.title` | Localized title | Shorthand → `product.titleAr` or `product.titleEn` based on Group `language` |
+| `product.description` | Localized description | Same locale shorthand |
+| `images[0].url` | First product image URL | Also checks `gallery`, `product.primaryImageUrl` |
+| `pricing.displayPrice` | Formatted unit price | From API payload or cart line mapping |
+| `pricing.displayLineTotal` | Formatted line total | Cart lines only |
+| `quantity` | Cart line quantity | Cart lines only |
+| `lineId` | Cart line identifier | Cart lines only |
+
+Blocks that support `valueContext`: `ContentHeading`, `ContentParagraph`, `ContentImage` (`valueContext` on `src`, `altValueContext` on `alt`), `ContentButton` (`labelValueContext` on `label`).
+
+When `fallbackToStatic` is `true` (default), the static prop (e.g. `text: "عنوان المنتج"`) is shown in the editor before data loads or when the path is empty.
+
+#### Add to cart
+
+1. User clicks `ContentButton` with `destinationType: "action"` and `buttonAction: "addToCart"` inside a product-bound `Group`.
+2. Runtime builds a `ProductCardActionEventDetail` from bound API data + selected variant.
+3. Dispatches browser event **`add-product`** with that detail.
+4. `registerAddProductCartListener()` (mounted from cart UI) writes to **`localStorage`** key **`store-cart`** and fires **`store-cart-updated`**.
+
+Cart line id format: `{productId}:{variantIdOrSerializedAttributes}`.
+
+#### Cart quantity & checkout actions
+
+| `buttonAction` | Behaviour |
+|---|---|
+| `cartQtyIncrease` | Reads `lineId` + `quantity` from bound cart line data; increments in `store-cart` |
+| `cartQtyDecrease` | Decrements quantity; removes line when quantity &lt; 1 |
+| `makeOrder` | Calls store checkout action with current cart |
+
+#### Cart storage schema (`store-cart`)
+
+```json
+{
+  "items": [
+    {
+      "lineId": "prod-001:{\"Color\":\"Red\"}",
+      "quantity": 2,
+      "product": {
+        "id": "prod-001",
+        "titleAr": "…",
+        "titleEn": "…",
+        "slug": "classic-shirt",
+        "mediaUrls": ["https://…"],
+        "currencyCode": "SYP"
+      },
+      "selectedVariant": null,
+      "selectedAttributes": {},
+      "pricing": {
+        "price": 10000,
+        "compareAt": null,
+        "discountPercent": 0,
+        "hasDiscount": false
+      },
+      "language": "ar",
+      "metadata": {
+        "type": "product",
+        "method": "get",
+        "apiUrl": "https://api.example.com/public/products/classic-shirt",
+        "id": "prod-001"
+      },
+      "addedAt": "2026-07-02T12:00:00.000Z"
+    }
+  ],
+  "updatedAt": "2026-07-02T12:00:00.000Z"
+}
+```
+
+Cart line groups map this to bound data via `mapCartLineToBoundData()` — same shape child blocks expect from product API payloads.
+
+#### Browser events
+
+| Event | Dispatched when | Detail |
+|---|---|---|
+| `add-product` | Add-to-cart button clicked | `ProductCardActionEventDetail` |
+| `store-cart-updated` | Cart written to localStorage | `{ items, updatedAt }` (StoreCart) |
+| `make-order` | Legacy `CartSection` order button | `{ cart: StoreCart }` |
+
+### SectionPresetMetadata
+
+Identifies commerce section presets on `Section.props.metadata`:
+
+```json
+{ "preset": "products-grid" }
+{ "preset": "shopping-cart" }
+```
+
+Legacy configs may also set `sectionKind` to the same string values. Detection accepts either field.
+
+### ProductPickerRef
+
+Used by bound `Group` blocks (and legacy `ProductCard`, `ProductImage`, `ProductInfo`):
+
+```json
+{ "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt", "slug": "classic-shirt" }
 ```
 
 ### CollectionPickerRef
 
-Used by `ProductsGrid`:
+Used by Products Grid section preset (`Section.props.collection`) and legacy `ProductsGrid`:
 
 ```json
-{ "id": "coll_featured", "name": "Featured", "productCount": 24 }
+{ "id": "coll_featured", "name": "Featured", "slug": "featured", "productCount": 24 }
 ```
+
+`slug` is required for the editor to fetch collection products at `resolveData` time.
 
 ### Resource metadata (read-only)
 
 Auto-populated by the editor when a product or collection is selected. Persisted in `store_config.json` so mobile can fetch live data at render time.
 
-**ProductCard** — `ProductResourceMetadata`:
+**Bound Group (product card)** — `ProductResourceMetadata`:
 
 ```json
 {
   "type": "product",
   "method": "get",
   "id": "prod_01",
-  "apiUrl": "https://api.example.com/admin/products/prod_01?include=PRICING&include=IMAGES&include=INVENTORY"
+  "apiUrl": "https://api.example.com/public/products/classic-shirt?include=PRICING&include=IMAGES&include=INVENTORY"
 }
 ```
 
-**ProductsGrid** — `ProductsGridResourceMetadata`:
+**Legacy ProductsGrid block** — `ProductsGridResourceMetadata`:
 
 ```json
 {
   "type": "collection",
   "method": "get",
   "collectionId": "coll_featured",
+  "collectionSlug": "featured",
   "productCount": 24,
-  "apiUrl": "https://api.example.com/admin/collections/coll_featured/products?page=0&size=100"
+  "apiUrl": "https://api.example.com/public/collections/featured/products?page=0&size=100"
+}
+```
+
+**Legacy CartSection block** — `CartSectionResourceMetadata`:
+
+```json
+{
+  "dataSource": "localStorage",
+  "storageKey": "store-cart"
 }
 ```
 
@@ -1812,6 +2401,19 @@ Used by `Button`, `ContentButton`, `NavMenu`, `SideDrawer`, `SiteHeader`, `SiteF
 { "kind": "url", "url": "https://external.com", "target": "_blank" }
 { "kind": "anchor", "hash": "features" }
 { "kind": "none" }
+```
+
+**Dynamic product links** — resolve a URL segment from bound data at render time:
+
+```json
+{
+  "kind": "page",
+  "pageId": "/products/:product-slug",
+  "dynamicSegment": {
+    "param": "product-slug",
+    "valueContext": "product.slug"
+  }
+}
 ```
 
 ### BilingualString

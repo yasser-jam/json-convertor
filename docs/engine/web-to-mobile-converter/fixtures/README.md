@@ -15,7 +15,7 @@ See [17-blocks-gap-analysis.md](../17-blocks-gap-analysis.md) for full BLOCKS.md
 | `Section` | `container` + `column` | [09-layout-blocks.md](../blocks/09-layout-blocks.md) |
 | `Flex` | `row` / `column` | 09-layout-blocks.md |
 | `Group` / `FlexGroup` / `Div` | `row` / `column` | 09-layout-blocks.md |
-| `Grid` | `column` of `row` groups | 09-layout-blocks.md |
+| `Grid` | `gridView` (static items) or API-backed `gridView` | 09-layout-blocks.md |
 
 ### Content (BLOCKS.md + legacy aliases)
 
@@ -55,7 +55,7 @@ See [17-blocks-gap-analysis.md](../17-blocks-gap-analysis.md) for full BLOCKS.md
 | Web type | Mobile target | Spec |
 |----------|---------------|------|
 | `SiteHeader` | `pages[].appBar` | [13-shell-blocks.md](../blocks/13-shell-blocks.md) |
-| `SiteFooter` | footer `container` | 13-shell-blocks.md |
+| `SiteFooter` | `pages[].footer` `container` | 13-shell-blocks.md |
 | `Html`, `Countdown`, `CookieConsent`, `SearchModal` | utility decomposition | [14-utility-blocks.md](../blocks/14-utility-blocks.md) |
 
 ---
@@ -84,6 +84,7 @@ See [17-blocks-gap-analysis.md](../17-blocks-gap-analysis.md) for full BLOCKS.md
 | 07 | [mega-full-page.web.json](07-mega-full-page.web.json) | [mega-full-page.mobile.json](07-mega-full-page.mobile.json) | Mega demo with BLOCKS.md types |
 | 08 | [blocks-md-catalog.web.json](08-blocks-md-catalog.web.json) | [blocks-md-catalog.mobile.json](08-blocks-md-catalog.mobile.json) | **BLOCKS.md v2026-06** — Content*, Accordion, Group surface, `metadata.apiUrl`, `CollectionPickerRef` |
 | 09 | [products-grid-metadata.web.json](09-products-grid-metadata.web.json) | [products-grid-metadata.mobile.json](09-products-grid-metadata.mobile.json) | `ProductsGrid` with `CollectionPickerRef` + `metadata` only |
+| 10 | [commerce-binding.web.json](10-commerce-binding.web.json) | [commerce-binding.mobile.json](10-commerce-binding.mobile.json) | `shopping-cart` preset, `valueContext`, `makeOrder` → `pages[].footer`, `cartQtyIncrease` |
 
 ---
 

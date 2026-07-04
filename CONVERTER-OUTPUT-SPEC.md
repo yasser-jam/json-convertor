@@ -1,6 +1,6 @@
 # Converter Output Specification
 
-**Version:** 2026-07-02 *(revised per mobile team review — see `CONVERTER-SPEC-REVIEW-2026-07-01.md`)*  
+**Version:** 2026-07-03 *(revised per mobile team reviews — see `CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`)*  
 **Source file:** `lib/transformer.ts` → `transformWebToMobile()`  
 **Audience:** Mobile engine team — Flutter SDUI renderers, schema validation, Dart model generation  
 **Purpose:** Authoritative description of every JSON shape the converter emits. Use this document as the single source of truth when building renderers, writing Dart schemas, and validating converter output.
@@ -23,6 +23,7 @@
 10. [Unsupported blocks](#10-unsupported-blocks)
 11. [Validation checklist](#11-validation-checklist)
 12. [Known limitations](#12-known-limitations)
+13. [Block convertibility matrix](#13-block-convertibility-matrix-blocksmd)
 
 ---
 
@@ -82,7 +83,7 @@ Every `"type"` field in converter output is one of these registered engine primi
 | Scroll | `singleChildScrollView` *(legacy; prefer page-level `scroll`)* |
 | Layout | `column`, `row`, `container`, `stack`, `listView`, `gridView`, `sizedBox` |
 | Content | `text`, `richtext`, `image`, `icon`, `divider`, `videoPlayer`, `imageSlider` |
-| Input / forms | `textFormField`, `form`, `button`, `contactButton`, `otpInput`, `dropdown` |
+| Input / forms | `textFormField`, `form`, `button`, `contactButton`, `radioGroup`, `otpInput`, `dropdown` |
 | Chrome | `appBar`, `appDrawer`, `tabs`, `card`, `expansionTile` |
 | Other | `timer`, `progressIndicator`, `unsupported` |
 
@@ -108,6 +109,7 @@ The converter normalises the following web type names before dispatch:
 | `VideoEmbed` | `YouTube` (handles both YouTube and MP4/HLS) |
 | `ProductsGrid` | `ProductGrid` |
 | `OrderHistory` | `OrderList` |
+| `RowGroup` | `Group` *(forced `direction: "row"`)* |
 
 ---
 
@@ -168,6 +170,10 @@ All navigation, actions and links are placed as a **sibling of `props`** on the 
 | `cubitCall` | `{ "type": "cubitCall", "cubit": "cart", "method": "addItem" }` | Cubit method call |
 | `apiCall` | `{ "type": "apiCall", "method": "POST", "url": "/api/...", "requireValidForm": true, "formId": "..." }` | Form submission |
 | `openDrawer` | `{ "type": "openDrawer" }` | Open navigation drawer |
+| `openBottomSheet` | `{ "type": "openBottomSheet", "child": { ... }, "showDragHandle": true, "isScrollControlled": true, "isDismissible": true, "heightFactor": 0.6, "replaceCurrent": false, "onClose": { ... } }` | Modal sheet with inline component tree |
+| `closeBottomSheet` | `{ "type": "closeBottomSheet" }` | Close top engine-opened sheet |
+
+> **Bottom sheet constraint:** sheet content renders from a **snapshot** of dataContext at open time. Use form inputs → `cubitCall` → `onSuccess: closeBottomSheet`. Triggers inside an open sheet that open another sheet must set `"replaceCurrent": true`.
 
 ### G3 — No theme tokens in output
 
@@ -469,6 +475,8 @@ Each subsection shows the web input (what the converter receives) and the exact 
 | h3 | 18 | `w600` |
 | h4 | 16 | `w600` |
 
+> **`w600` is valid** — the engine maps it to `FontWeight.w600`. Do not downgrade to `"bold"`.
+
 ---
 
 ### 6.3 RichText / ContentHtml
@@ -534,14 +542,15 @@ The HTML is passed through as-is. The mobile renderer strips tags for display.
   "props": {
     "label": "تسوق الآن",
     "variant": "elevated",
-    "height": 48,
     "fullWidth": true
   },
   "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
 }
 ```
 
-**Supported `button` props:** `label`, `variant`, `height`, `fullWidth`, `color` (from theme), `shadow`, `enabledPath`, `enabledWhen`.
+> **Button height:** omit `height` for web `size: "md"` (theme default). Emit `height: 36` / `56` only for `sm` / `lg`. Never emit `height` on `contactButton`.
+
+**Supported `button` props:** `label`, `variant`, `height`, `fullWidth`, `color` (from theme), `shadow`, `enabledPath`, `enabledWhen`, `trailingText`, `trailingTextPath`.
 
 **Conditional enable** — gate a button on form validity or data context:
 ```json
@@ -560,14 +569,20 @@ The HTML is passed through as-is. The mobile renderer strips tags for display.
 | `logout` | `{ "type": "cubitCall", "cubit": "auth", "method": "logout", "onSuccess": { "type": "navigate", "route": "/auth/login", "navigation_type": "go" } }` |
 | `addToCart` | `{ "type": "cubitCall", "cubit": "cart", "method": "addItem" }` |
 | `addToWishlist` | `{ "type": "navigate", "route": "/wishlist", "navigation_type": "push" }` |
+| `makeOrder` | `{ "type": "cubitCall", "cubit": "checkout", "method": "placeOrder" }` |
+| `cartQtyIncrease` | `{ "type": "cubitCall", "cubit": "cart", "method": "increaseQuantity", "params": { "lineId": { "source": "data", "field": "lineId" } } }` |
+| `cartQtyDecrease` | `{ "type": "cubitCall", "cubit": "cart", "method": "decreaseQuantity", "params": { "lineId": { "source": "data", "field": "lineId" } } }` |
+| `verifyOtp` | `{ "type": "cubitCall", "cubit": "auth", "method": "verifyOtp", "requireValidForm": true }` |
 
-> `buttonAction`, `link`, `href`, `destinationType` are **never** emitted inside `props`.
+> `buttonAction`, `link`, `href`, `destinationType` are **never** emitted inside `props`. Web `destinationType: "zone"` maps to `openBottomSheet`, `openDrawer`, or `navigate` when the zone key is known.
 
 ### 6.5b ContactButton (optional)
 
 Emit `contactButton` only when the link target is unambiguously a contact URI (`tel:`, `sms:`, `mailto:`, `wa.me`) **and** channel styling is desired. A normal `button` with `tap: { type: "openContact" }` or `tap: { type: "openUrl" }` to a `tel:`/`mailto:` URL also works.
 
-Required props: `channel` + `label`. Default `fullWidth: true`.
+Required props: `channel` + `label` + (`target` or `targetPath`). Default `fullWidth: true`. **Never emit `height` on `contactButton`.**
+
+The renderer requires `props.target` (or `targetPath`) for enabled state — the node-level `tap` alone is not enough.
 
 | Channel | Background | Icon |
 |---------|-----------|------|
@@ -581,22 +596,30 @@ Required props: `channel` + `label`. Default `fullWidth: true`.
 {
   "id": "contact-btn-1",
   "type": "contactButton",
-  "props": { "channel": "whatsapp", "label": "تواصل عبر واتساب", "fullWidth": true },
+  "props": {
+    "channel": "whatsapp",
+    "label": "واتساب",
+    "target": "+966501234567",
+    "fullWidth": true,
+    "borderRadius": 10
+  },
   "tap": { "type": "openContact", "channel": "whatsapp", "target": "+966501234567" }
 }
 ```
+
+> Same `target` value in both `props` and `tap`.
 
 ---
 
 ### 6.6 Link
 
-A `Link` block becomes a `button` with `variant: "ghost"` and height `36`.
+A `Link` block becomes a `button` with `variant: "text"` (web `ghost` → `"text"` per §5 variant map). Never emit literal `"ghost"` in output.
 
 ```json
 {
   "id": "link-1",
   "type": "button",
-  "props": { "label": "تفاصيل", "variant": "ghost", "height": 36 },
+  "props": { "label": "تفاصيل", "variant": "text" },
   "tap": { "type": "navigate", "route": "/about", "navigation_type": "push" }
 }
 ```
@@ -673,6 +696,7 @@ Unknown Lucide icons resolve to `help_outline`.
 | `aspectRatio` (string) | `aspectRatio` (number) | resolved |
 | `width` / `height` | `width` / `height` (numbers) | px stripped |
 | `align`, `maxWidth` | — | wrap caller in `container` instead |
+| `valueContext.path` | `urlPath` / `semanticsLabelPath` | see §9.5 |
 
 ---
 
@@ -693,6 +717,7 @@ Unknown Lucide icons resolve to `help_outline`.
 ```
 
 - `orientation: "vertical"` → emits a `container` with `width: 1` instead of a `divider`.
+- `variant: "dashed"` → dashed line using existing `thickness`/`color`/`height`. Web dashed/dotted dividers emit this.
 
 ---
 
@@ -1248,6 +1273,8 @@ When `backgroundImage` is present on a `Section`:
 
 ---
 
+### 6.21 Stats
+
 **Web input:**
 ```json
 {
@@ -1493,6 +1520,59 @@ Emit `timer` **only** when the page input explicitly defines a redirect or delay
 
 ---
 
+### 6.30 RadioGroup
+
+Single-choice vertical radio list — used for payment/shipping/option pickers. Web radio-style blocks map here, not a column of buttons.
+
+```json
+{
+  "id": "checkout-payment-methods",
+  "type": "radioGroup",
+  "props": {
+    "id": "paymentMethod",
+    "itemsPath": "requests.payment-methods.data",
+    "itemLabelPath": "displayName",
+    "itemValuePath": "providerCode",
+    "itemEnabledPath": "selectable",
+    "selectedValuePath": "checkout.selectedPaymentMethod",
+    "showItemAvatar": true,
+    "activeColor": "#1D4ED8",
+    "gap": 10,
+    "emptyHint": "لا توجد وسائل دفع"
+  },
+  "data": { "requestKey": "payment-methods", "requestUrl": "/api/v1/public/payments/methods" },
+  "tap": {
+    "type": "cubitCall",
+    "cubit": "checkout",
+    "method": "selectPaymentMethod",
+    "params": { "providerCode": { "source": "tap", "field": "value" } },
+    "onSuccess": { "type": "closeBottomSheet" }
+  }
+}
+```
+
+### 6.31 Conditional visibility (`visibleWhen`)
+
+Any node may carry `props.visibleWhen`:
+
+```json
+{
+  "type": "container",
+  "props": {
+    "visibleWhen": { "source": "data", "field": "checkout.selectedPaymentMethod", "when": "equals", "value": "cod" }
+  }
+}
+```
+
+| Field | Values |
+|-------|--------|
+| `source` | `form` (default) \| `pageState` \| `data` / `dataContext` |
+| `field` | form field id / pageState key / dataContext path |
+| `when` | `nonEmpty` (default) \| `isEmpty` \| `equals` |
+| `value` | Comparison value for `equals` |
+
+---
+
 ## 7. Page Envelope Structure
 
 When the input is a page object or array of page objects, the converter emits a full app config:
@@ -1558,6 +1638,7 @@ When the input is a page object or array of page objects, the converter emits a 
       "scroll": "vertical",
       "appBar": { ... },
       "body": [ ... ],
+      "footer": { ... },
       "appDrawer": { ... }
     }
   ]
@@ -1573,6 +1654,47 @@ When the input is a page object or array of page objects, the converter emits a 
 | Auth / splash pages | Set `"scroll": "none"` on page input |
 | `background` default | `"#ffffff"` |
 | Page chrome | Use page-level `background` + `scroll` — **never** emit a `scaffold` node in `body[]` |
+| Pinned CTA bars | `pages[].footer` — **never** end of `body[]` and never `stack` + `stackLayer: "positioned"` for page footers |
+
+### Page-level `footer`
+
+A page-level key (sibling of `appBar`/`body`) for sticky CTAs (checkout place-order, product add-to-cart). Chrome (background, shadow, padding) must be authored on the footer node, usually a `container`.
+
+**Hard rule:** `pages[].footer` is the **only** valid output for a page-level pinned bottom bar. `stackLayer` positioning is for intra-component overlays only (badge on image, text over banner).
+
+**`footer.overlay: true`** — optional key on the footer node (sibling of `type`). Footer floats over body content. Also emit a `sizedBox` spacer at end of `body[]` so last content clears the bar (e.g. `height: 116`).
+
+```json
+"footer": {
+  "overlay": true,
+  "id": "product-detail-footer",
+  "type": "container",
+  "props": {
+    "color": "#FFFFFF",
+    "borderRadius": { "topLeft": 24, "topRight": 24 },
+    "padding": { "left": 16, "right": 16, "top": 16, "bottom": 12 },
+    "shadow": "lg"
+  },
+  "child": { "...": "add-to-cart row" }
+}
+```
+
+Checkout sticky CTA example:
+
+```json
+"footer": {
+  "id": "checkout-footer",
+  "type": "container",
+  "props": { "color": "#FFFFFF", "shadow": "md", "padding": { "top": 12, "bottom": 12, "left": 16, "right": 16 } },
+  "child": {
+    "id": "checkout-place-order",
+    "type": "button",
+    "props": { "label": "تأكيد الطلب", "variant": "filled", "fullWidth": true, "trailingTextPath": "checkout.payableTotalFormatted" }
+  }
+}
+```
+
+> **SiteFooter vs sticky footer:** `SiteFooter` zone content also maps to `pages[].footer` (not end of `body[]`). Commerce sticky CTAs from shopping-cart preset or product detail pages use the same slot.
 
 ### `appBar` structure
 
@@ -1618,7 +1740,7 @@ The `appBar` is built from the page `SiteHeader` block and `rootProps`:
 
 ### `appDrawer` structure
 
-Emitted when a `SiteDrawerShell` or `SideDrawer` block is found in the page blocks (placed alongside `body` on the page node, not inside `body`):
+Emitted when a `SiteDrawerShell`, `ZoneDrawer`, or `SideDrawer` block is found in the page blocks (placed alongside `body` on the page node, not inside `body`):
 
 ```json
 {
@@ -1814,6 +1936,33 @@ Default `crossAxisCount` is `2`. Override with `props.columns`.
 
 Absolute admin URLs in `metadata.apiUrl` are automatically rewritten to relative public paths.
 
+### 9.5 ValueContext binding (Group + content blocks)
+
+Commerce UI uses **`Section` presets** + bound **`Group`** blocks + **`valueContext`** on content children. When `valueContext.path` is set:
+
+| Web `valueContext.path` | Mobile field | Mobile path |
+|-------------------------|--------------|-------------|
+| `product.title` | `valuePath` | `item.name` |
+| `product.description` | `valuePath` | `item.description` |
+| `images[0].url` | `urlPath` | `item.primaryImageUrl` |
+| `pricing.displayPrice` | `valuePath` | `item.price` |
+| `pricing.displayLineTotal` | `valuePath` | `item.lineTotal` |
+| `quantity` | `valuePath` | `item.quantity` |
+| `lineId` | `valuePath` | `item.lineId` |
+| `altValueContext` → `product.title` | `semanticsLabelPath` | `item.name` |
+| `labelValueContext` on button | `labelPath` | `item.name` |
+
+Static fallback values remain when `fallbackToStatic: true` (editor preview only; mobile uses paths at runtime).
+
+### 9.6 Section commerce presets
+
+Detected via `metadata.preset` or legacy `sectionKind`:
+
+| Preset | Web source | Converter strategy |
+|--------|------------|-------------------|
+| `products-grid` | Design Studio → Products Grid | If `content[]` has bound `Group`s → convert as-is preserving structure. If only `collection` + empty content → `gridView` + `requestUrl` from `metadata.apiUrl` (legacy fallback). |
+| `shopping-cart` | Design Studio → Shopping Cart | Shell blocks from `content[]`/`cartSlotItems`; cart lines via `listView` + `source: "cart.items"` + `valuePath` template from first `cartLineId` Group. `makeOrder` button → `pages[].footer`. |
+
 ---
 
 ## 10. Unsupported Blocks
@@ -1825,7 +1974,12 @@ Absolute admin URLs in `metadata.apiUrl` are automatically rewritten to relative
 | `SideDrawer` | Handled as `SiteDrawerShell` (generates `appDrawer`) | |
 | `Blank` | `null` (omitted entirely) | |
 | `SiteHeader` | Not in `body[]` — used to build `appBar` | |
-| `SiteFooter` | Emitted as `container` + `column` at the **end** of `body[]` | |
+| `SiteFooter` | Page-level `footer` key (not in `body[]`) | |
+| `ZoneDrawer` | Page-level `appDrawer` from `slot[]` | |
+| `ZonePopup` / `ZoneBottomSheet` | `openBottomSheet` when triggered by `ContentButton` `destinationType: "zone"` | Otherwise `unsupported` + warning |
+| `LoginButton` | Navigate stub to `/auth/login` or omitted when appBar handles auth | |
+| `CartIconButton` | Covered by `appBar.showCartIcon` when header present | |
+| `ContentHtml` | Stripped to plain `text` or omitted with warning | Hidden on mobile in web |
 | `SiteDrawerShell` | Not in `body[]` — emitted as `appDrawer` on the page node | |
 | `Template` | Flattened (wrapper discarded) | |
 
@@ -1889,7 +2043,14 @@ Use this checklist before sending converter output to the engine.
 - [ ] `appBar` is a page-level key (sibling of `body`), not inside `body[]`
 - [ ] No `showBackButton` emitted (back arrow is automatic)
 - [ ] No `scaffold` node; page background/scroll via page-level keys
-- [ ] `SiteDrawerShell` → page-level `appDrawer`
+- [ ] `SiteDrawerShell` / `ZoneDrawer` → page-level `appDrawer`
+- [ ] Pinned/sticky CTA bars → page-level `footer`, never end of `body[]` and never stack overlay for page footers
+- [ ] `footer.overlay: true` only when design floats bar over content; then emit end-of-body `sizedBox` spacer
+- [ ] `contactButton` has `props.target` or `props.targetPath` **and** node-level `tap: openContact` (same target)
+- [ ] `button.height` only when non-default (`sm`→36, `lg`→56); omit for `md`; never on `contactButton`
+- [ ] No literal `"ghost"`/`"primary"` in output — §5 variant map applied (`ghost` → `text`)
+- [ ] Radio-style single-choice blocks → `radioGroup` (not column of buttons)
+- [ ] `openBottomSheet.child` is a full component node (root has `id`, `type`, `props`)
 
 ### API / data
 
@@ -1921,9 +2082,37 @@ These are by design — the mobile team should not expect different output for t
 | `CategoryListMenu` | Runtime category data — emits `unsupported` node. Do **not** auto-navigate to `/categories`; wire manually per merchant. |
 | `ProductSearchMenu` | Needs cubit + search field wiring — emits `unsupported` node. Do **not** auto-navigate to `/search`; wire manually per merchant. |
 | Wishlist `itemBuilder.item` | Empty object `{}` — renderer builds its own template |
-| Heading `w600` | Valid engine font weight — do not downgrade to `bold` |
-| `CategoryListMenu` / `ProductSearchMenu` auto-navigate | **Retracted** — merchants define their own routes; guessing routes causes dead taps |
 
 ---
 
-*Source: `lib/transformer.ts` — last updated 2026-07-02. Revised per mobile team review (`CONVERTER-SPEC-REVIEW-2026-07-01.md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*
+## 13. Block Convertibility Matrix (BLOCKS.md)
+
+### Cannot convert automatically
+
+| Block | Output |
+|-------|--------|
+| `CategoryListMenu` | `unsupported` + warning |
+| `ProductSearchMenu` | `unsupported` + warning |
+| `SideDrawer` | `unsupported` (use `ZoneDrawer` → `appDrawer`) |
+| `Blank` | omitted |
+| `ZonePopup` / `ZoneBottomSheet` | `openBottomSheet` only when zone trigger exists; else `unsupported` |
+
+### Partial / lossy
+
+| Block / pattern | Gap |
+|-----------------|-----|
+| Section `shopping-cart` preset | Cart line layout simplified to `listView` template |
+| Section `products-grid` preset | Bound Groups need `valueContext` paths preserved |
+| `Group` + `cartLineId` | Web localStorage → mobile `cart.items` cubit |
+| `CartSection` (legacy) | Generic listView template |
+| `CheckoutForm` | Multi-route checkout flow |
+| `Testimonials` CMS source | Inline fallback only |
+| `layout.hideOnMobile` | Omitted or `visibleWhen` when convertible |
+
+### Fully convertible
+
+Accordion, Button, Card, ContactForm, ContentButton, ContentDivider, ContentHeading, ContentIcon, ContentImage, ContentParagraph, Flex, Grid, Group, RowGroup, Heading, Hero, ImageGallery, Logos, NavMenu, OrderHistory, RichText, Section, Space, Stats, Template, Testimonials (inline), Text, VideoEmbed, Wishlist, ZoneDrawer, SiteHeader, SiteFooter, SiteDrawerShell, ProductsGrid (legacy), ProductCard (legacy).
+
+---
+
+*Source: `lib/transformer.ts` — last updated 2026-07-03. Revised per mobile team reviews (`CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*

@@ -1,0 +1,18 @@
+{
+  "fragment": "pageWithFooter",
+  "route": "/cart",
+  "notes": [
+    "makeOrder ContentButton is emitted on pages[].footer, not in body[]",
+    "valueContext product.title maps to valuePath item.name inside bound Group",
+    "cartQtyIncrease maps to cubitCall cart.increaseQuantity"
+  ],
+  "bodyContains": [
+    { "type": "text", "props": { "valuePath": "item.name" } },
+    { "type": "button", "tap": { "type": "cubitCall", "cubit": "cart", "method": "increaseQuantity" } }
+  ],
+  "footerContains": {
+    "type": "button",
+    "props": { "label": "إتمام الطلب" },
+    "tap": { "type": "cubitCall", "cubit": "checkout", "method": "placeOrder" }
+  }
+}

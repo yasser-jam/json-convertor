@@ -1,0 +1,52 @@
+{
+  "path": "/cart",
+  "label": "Shopping Cart",
+  "rootProps": {
+    "language": "ar",
+    "direction": "rtl",
+    "primary": "#0b78c5"
+  },
+  "blocks": [
+    {
+      "type": "Section",
+      "props": {
+        "metadata": { "preset": "shopping-cart" },
+        "paddingTop": "0",
+        "paddingBottom": "0",
+        "content": [
+          {
+            "type": "Group",
+            "props": {
+              "cartLineId": "line-1",
+              "content": [
+                {
+                  "type": "ContentHeading",
+                  "props": {
+                    "text": "Product",
+                    "valueContext": { "path": "product.title" }
+                  }
+                },
+                {
+                  "type": "ContentButton",
+                  "props": {
+                    "label": "+",
+                    "destinationType": "action",
+                    "buttonAction": "cartQtyIncrease"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "type": "ContentButton",
+            "props": {
+              "label": "إتمام الطلب",
+              "destinationType": "action",
+              "buttonAction": "makeOrder"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
