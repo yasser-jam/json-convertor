@@ -37,7 +37,6 @@ const WEB_TYPE_ALIASES: Record<string, string> = {
 const UNSUPPORTED_LEAF_BLOCKS = new Set([
   "CategoryListMenu",
   "ProductSearchMenu",
-  "SideDrawer",
 ]);
 
 /** Binding context for valueContext → valuePath resolution inside Groups. */
@@ -46,7 +45,7 @@ let _pageStickyFooter: Record<string, unknown> | null = null;
 let _pageFooterOverlay = false;
 let _zoneSlots: Map<string, Record<string, unknown>[]> = new Map();
 
-const VALUE_CONTEXT_MAP: Record<string, { valuePath?: string; urlPath?: string; semanticsLabelPath?: string; labelPath?: string }> = {
+const VALUE_CONTEXT_MAP: Record<string, { valuePath?: string; urlPath?: string }> = {
   "product.title": { valuePath: "item.name" },
   "product.description": { valuePath: "item.description" },
   "images[0].url": { urlPath: "item.primaryImageUrl" },
@@ -54,6 +53,7 @@ const VALUE_CONTEXT_MAP: Record<string, { valuePath?: string; urlPath?: string; 
   "pricing.displayLineTotal": { valuePath: "item.lineTotal" },
   quantity: { valuePath: "item.quantity" },
   lineId: { valuePath: "item.lineId" },
+  variantId: { valuePath: "item.variantId" },
 };
 
 function withBindingContext<T>(binding: "product" | "cart" | null, fn: () => T): T {
@@ -88,17 +88,8 @@ function applyValueContext(
       delete outProps.url;
     }
   }
-  const labelVc = props.labelValueContext as Record<string, unknown> | undefined;
-  if (labelVc?.path && kind === "button") {
-    const mapped = VALUE_CONTEXT_MAP[labelVc.path as string];
-    if (mapped?.valuePath) outProps.labelPath = mapped.valuePath;
-  }
-  const altVc = props.altValueContext as Record<string, unknown> | undefined;
-  if (altVc?.path === "product.title" && kind === "image") {
-    outProps.semanticsLabelPath = "item.name";
-    delete outProps.semanticsLabel;
-    delete outProps.alt;
-  }
+  // labelValueContext / altValueContext: engine has no labelPath or semanticsLabelPath —
+  // use a sibling text node with valuePath for dynamic labels in repeat templates.
 }
 
 function getSectionPreset(props: Record<string, unknown>): string | null {
@@ -444,16 +435,26 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
       return { type: "cubitCall", cubit: "checkout", method: "placeOrder" };
     case "cartQtyIncrease":
       return {
-        type: "cubitCall", cubit: "cart", method: "increaseQuantity",
-        params: { lineId: { source: "data", field: "lineId" } },
+        type: "cubitCall", cubit: "cart", method: "updateQuantity",
+        params: {
+          variantId: { source: "item", field: "variantId" },
+          delta: { source: "value", value: 1 },
+        },
       };
     case "cartQtyDecrease":
       return {
-        type: "cubitCall", cubit: "cart", method: "decreaseQuantity",
-        params: { lineId: { source: "data", field: "lineId" } },
+        type: "cubitCall", cubit: "cart", method: "updateQuantity",
+        params: {
+          variantId: { source: "item", field: "variantId" },
+          delta: { source: "value", value: -1 },
+        },
       };
     case "verifyOtp":
-      return { type: "cubitCall", cubit: "auth", method: "verifyOtp", requireValidForm: true };
+      return {
+        type: "cubitCall", cubit: "auth", method: "verifyOtp",
+        requireValidForm: true, formId: "otp-verify-form",
+        params: { phone: { source: "authState", field: "phone" } },
+      };
     default:
       return undefined;
   }
@@ -1748,30 +1749,62 @@ function transformCartSummary(block: Record<string, unknown>, rootProps: Record<
 function transformCheckoutForm(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
   const lang = (rootProps.language as string) || "ar";
-  const fields = (props.fields as Record<string, unknown>[]) || [
+  const rawFields = (props.fields as Record<string, unknown>[]) || [
     { name: "name", label: "الاسم الكامل", hint: "أدخل اسمك" },
     { name: "phone", label: "رقم الهاتف", hint: "09XXXXXXXX" },
     { name: "address", label: "العنوان", hint: "المدينة، الشارع" },
   ];
   const submissionAction = props.submissionAction as Record<string, unknown> | undefined;
 
-  const fieldNodes = fields.map((field) => {
+  const addressFields = rawFields.filter((field) => {
     const fieldId = (field.name as string) || "";
+    if (fieldId === "email") {
+      addWarning("Email field omitted from address form; guest email belongs on /checkout contact card → placeOrder.params.guestEmail");
+      return false;
+    }
+    return true;
+  });
+
+  const fieldNodes = addressFields.map((field) => {
+    const fieldId = (field.name as string) || "";
+    const fieldType = (field.type as string) || "";
+    if (fieldType === "boolean" || fieldId === "isDefault") {
+      return {
+        id: generateId("cf-switch"),
+        type: "switchField",
+        props: {
+          id: fieldId || "isDefault",
+          label: (field.label as string) || "تعيين كعنوان افتراضي",
+          activeColor: (rootProps.primary as string) || "#1D4ED8",
+        },
+      };
+    }
     const fieldProps: Record<string, unknown> = {
       id: fieldId,
       label: (field.label as string) || "",
-      hint: (field.placeholder as string) || "",
-      textDirection: fieldId === "email" || fieldId === "phone" ? "ltr" : "rtl",
+      hint: (field.placeholder as string) || (field.hint as string) || "",
+      textDirection: fieldId === "phone" ? "ltr" : "rtl",
     };
     if (fieldId === "email") {
       fieldProps.keyboardType = "email";
       fieldProps.validateEmail = true;
     }
-    if ((field.required as boolean) || fieldId === "name" || fieldId === "email" || fieldId === "phone") {
+    if ((field.required as boolean) || fieldId === "name" || fieldId === "phone" || fieldId === "recipientName" || fieldId === "recipientPhone" || fieldId === "streetAddress") {
       fieldProps.validateRequired = true;
     }
     return { id: generateId("cf-field"), type: "textFormField", props: fieldProps };
   });
+
+  const mapPickerBtn = {
+    id: generateId("cf-map-picker"),
+    type: "button",
+    props: {
+      label: lang === "ar" ? "تحديد الموقع على الخريطة" : "Pick location on map",
+      variant: "outlined",
+      fullWidth: true,
+    },
+    tap: { type: "cubitCall", cubit: "checkout", method: "pickAddressLocation" },
+  };
 
   const node: Record<string, unknown> = {
     id: generateId("checkout-form"),
@@ -1783,6 +1816,7 @@ function transformCheckoutForm(block: Record<string, unknown>, rootProps: Record
       props: flexProps("start", "stretch", { gap: 16 }),
       children: [
         ...fieldNodes,
+        mapPickerBtn,
         {
           id: generateId("cf-submit"),
           type: "button",
@@ -2764,6 +2798,7 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
     case "SiteHeader":
     case "SiteFooter":
     case "SiteDrawerShell":
+    case "SideDrawer":
       return null;
 
     default: {
@@ -2844,12 +2879,6 @@ function transformTheme(rootProps: Record<string, unknown>): Record<string, unkn
 }
 
 function transformNavigation(rootProps: Record<string, unknown>, pages: Record<string, unknown>[]): Record<string, unknown> {
-  const excludeRoutes = [
-    "/splash", "/splash-carousel", "/auth/login", "/auth/otp-reset",
-    "/product/details", "/categories", "/checkout", "/checkout/address",
-    "/checkout/payment", "/checkout/success", "/orders",
-  ];
-
   const tabs = [
     { id: "tab-home", label: "الرئيسية", icon: "home", route: "/home" },
     { id: "tab-categories", label: "الأقسام", icon: "grid_view", route: "/categories" },
@@ -2858,10 +2887,21 @@ function transformNavigation(rootProps: Record<string, unknown>, pages: Record<s
     { id: "tab-profile", label: "حسابي", icon: "person", route: "/profile" },
   ];
 
+  const tabRoutes = new Set(tabs.map((t) => t.route));
+  const systemExcludeRoutes = [
+    "/splash", "/splash-carousel", "/auth/login", "/auth/otp-reset",
+    "/product/details", "/checkout", "/checkout/address",
+    "/checkout/payment", "/checkout/success", "/orders",
+  ];
+  const pageRoutes = pages
+    .map((p) => normalizeRoute((p.route as string) || "/"))
+    .filter((r) => !tabRoutes.has(r));
+  const shellExcludeRoutes = [...new Set([...systemExcludeRoutes, ...pageRoutes])];
+
   return {
     type: "tabs",
     initialRoute: "/splash",
-    shellExcludeRoutes: excludeRoutes,
+    shellExcludeRoutes,
     tabs,
   };
 }
@@ -3001,6 +3041,19 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
     appBarProps.showCartIcon = true;
     appBarProps.cartBadgePath = "cart.itemCount";
     appBarProps.cartAction = { type: "navigate", route: "/cart" };
+  }
+
+  const gradientTop = (rootProps.headerBackgroundGradientTop as string) || "";
+  const gradientBottom = (rootProps.headerBackgroundGradientBottom as string) || "";
+  const useBrandGradient = rootProps.headerBackgroundGradient === true
+    || rootProps.headerBackgroundGradient === "on"
+    || rootProps.headerUseBrandGradient === true
+    || rootProps.headerUseBrandGradient === "on";
+  if (gradientTop && gradientBottom) {
+    appBarProps.backgroundGradientTop = gradientTop;
+    appBarProps.backgroundGradientBottom = gradientBottom;
+  } else if (useBrandGradient) {
+    appBarProps.backgroundGradient = true;
   }
 
   const appBar: Record<string, unknown> = {

@@ -607,10 +607,10 @@ describe("transformWebToMobile", () => {
   });
 
   describe("block: CheckoutForm", () => {
-    it("creates form with textFormField children", () => {
+    it("creates address form with textFormField, switchField, and map picker", () => {
       const input = {
-        path: "/checkout",
-        label: "Checkout",
+        path: "/checkout/address",
+        label: "Address",
         rootProps: { language: "en", direction: "ltr", primary: "#000" },
         blocks: [
           {
@@ -622,8 +622,9 @@ describe("transformWebToMobile", () => {
                   fields: [
                     { name: "email", label: "Email", type: "email", required: true },
                     { name: "name", label: "Name", type: "text", required: false },
+                    { name: "isDefault", label: "Set as default", type: "boolean" },
                   ],
-                  submitLabel: "Buy Now",
+                  submitLabel: "Save",
                   submissionAction: { type: "cubitCall", method: "checkout", params: {} },
                 },
               }
@@ -637,13 +638,21 @@ describe("transformWebToMobile", () => {
       const form = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0];
       expect(form.type).toBe("form");
       const formCol = form.child as Record<string, unknown>;
-      const fields = (formCol.children as Record<string, unknown>[]).filter((c) => c.type === "textFormField");
-      expect(fields).toHaveLength(2);
-      expect((fields[0].props as Record<string, unknown>).id).toBe("email");
-      expect((fields[0].props as Record<string, unknown>).validateRequired).toBe(true);
-      expect((fields[0].props as Record<string, unknown>).validateEmail).toBe(true);
+      const children = formCol.children as Record<string, unknown>[];
+      const fields = children.filter((c) => c.type === "textFormField");
+      expect(fields).toHaveLength(1);
+      expect((fields[0].props as Record<string, unknown>).id).toBe("name");
 
-      const submitBtn = (formCol.children as Record<string, unknown>[]).find((c) => c.type === "button");
+      const switchField = children.find((c) => c.type === "switchField");
+      expect(switchField).toBeDefined();
+      expect((switchField!.props as Record<string, unknown>).id).toBe("isDefault");
+
+      const mapBtn = children.find((c) => c.type === "button" && (c.tap as Record<string, unknown>)?.method === "pickAddressLocation");
+      expect(mapBtn).toBeDefined();
+
+      expect(result.warnings?.some((w) => w.includes("guest email"))).toBe(true);
+
+      const submitBtn = children.find((c) => c.type === "button" && (c.tap as Record<string, unknown>)?.method !== "pickAddressLocation");
       expect(submitBtn).toBeDefined();
       expect((submitBtn!.tap as Record<string, unknown>).type).toBe("cubitCall");
     });
@@ -1065,7 +1074,7 @@ describe("transformWebToMobile", () => {
       expect(row.type).toBe("row");
     });
 
-    it("maps cartQtyIncrease to cubitCall", () => {
+    it("maps cartQtyIncrease to cubitCall updateQuantity", () => {
       const input = {
         path: "/cart-qty",
         label: "Qty",
@@ -1081,7 +1090,10 @@ describe("transformWebToMobile", () => {
       const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
       const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
       const btn = (((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0]);
-      expect((btn.tap as Record<string, unknown>).method).toBe("increaseQuantity");
+      const tap = btn.tap as Record<string, unknown>;
+      expect(tap.method).toBe("updateQuantity");
+      expect((tap.params as Record<string, unknown>).variantId).toEqual({ source: "item", field: "variantId" });
+      expect((tap.params as Record<string, unknown>).delta).toEqual({ source: "value", value: 1 });
     });
   });
 });

@@ -1,6 +1,6 @@
 # Converter Output Specification
 
-**Version:** 2026-07-03 *(revised per mobile team reviews — see `CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`)*  
+**Version:** 2026-07-05 *(revised per mobile team reviews — see `CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`, `CONVERTER-SPEC-REVIEW-2026-07-05.md`)*  
 **Source file:** `lib/transformer.ts` → `transformWebToMobile()`  
 **Audience:** Mobile engine team — Flutter SDUI renderers, schema validation, Dart model generation  
 **Purpose:** Authoritative description of every JSON shape the converter emits. Use this document as the single source of truth when building renderers, writing Dart schemas, and validating converter output.
@@ -83,7 +83,7 @@ Every `"type"` field in converter output is one of these registered engine primi
 | Scroll | `singleChildScrollView` *(legacy; prefer page-level `scroll`)* |
 | Layout | `column`, `row`, `container`, `stack`, `listView`, `gridView`, `sizedBox` |
 | Content | `text`, `richtext`, `image`, `icon`, `divider`, `videoPlayer`, `imageSlider` |
-| Input / forms | `textFormField`, `form`, `button`, `contactButton`, `radioGroup`, `otpInput`, `dropdown` |
+| Input / forms | `textFormField`, `form`, `button`, `contactButton`, `radioGroup`, `otpInput`, `dropdown`, `switchField` |
 | Chrome | `appBar`, `appDrawer`, `tabs`, `card`, `expansionTile` |
 | Other | `timer`, `progressIndicator`, `unsupported` |
 
@@ -174,6 +174,24 @@ All navigation, actions and links are placed as a **sibling of `props`** on the 
 | `closeBottomSheet` | `{ "type": "closeBottomSheet" }` | Close top engine-opened sheet |
 
 > **Bottom sheet constraint:** sheet content renders from a **snapshot** of dataContext at open time. Use form inputs → `cubitCall` → `onSuccess: closeBottomSheet`. Triggers inside an open sheet that open another sheet must set `"replaceCurrent": true`.
+
+### G2b — `cubitCall` param `source` vocabulary
+
+Each key in `cubitCall.params` resolves from one of these `source` values:
+
+| `source` | Reads from |
+|----------|-----------|
+| `form` | `FormStateStore` field id (`field`) |
+| `tap` | Tap payload (radioGroup / dropdown / tabs selection) |
+| `item` | Current repeat-item in a list/grid template |
+| `dataContext` / `context` | Dotted path in `field` |
+| `pageState` / `page_state` | `PageStateStore` key |
+| `routeParams` / `route_params` | Route parameters |
+| `authState` | Auth session field |
+| `app` | `app.*` config values (e.g. `supportWhatsApp`) |
+| `value` | Literal: `{ "source": "value", "value": 1 }` |
+
+> **`source: "data"` is not valid in cubitCall params** — unknown sources fall through to null. `visibleWhen` (§6.31) has its own vocabulary (`form` \| `pageState` \| `data` / `dataContext`). Do not reuse one in the other.
 
 ### G3 — No theme tokens in output
 
@@ -569,10 +587,14 @@ The HTML is passed through as-is. The mobile renderer strips tags for display.
 | `logout` | `{ "type": "cubitCall", "cubit": "auth", "method": "logout", "onSuccess": { "type": "navigate", "route": "/auth/login", "navigation_type": "go" } }` |
 | `addToCart` | `{ "type": "cubitCall", "cubit": "cart", "method": "addItem" }` |
 | `addToWishlist` | `{ "type": "navigate", "route": "/wishlist", "navigation_type": "push" }` |
-| `makeOrder` | `{ "type": "cubitCall", "cubit": "checkout", "method": "placeOrder" }` |
-| `cartQtyIncrease` | `{ "type": "cubitCall", "cubit": "cart", "method": "increaseQuantity", "params": { "lineId": { "source": "data", "field": "lineId" } } }` |
-| `cartQtyDecrease` | `{ "type": "cubitCall", "cubit": "cart", "method": "decreaseQuantity", "params": { "lineId": { "source": "data", "field": "lineId" } } }` |
-| `verifyOtp` | `{ "type": "cubitCall", "cubit": "auth", "method": "verifyOtp", "requireValidForm": true }` |
+| `makeOrder` | `{ "type": "cubitCall", "cubit": "checkout", "method": "placeOrder" }` — optional `params.guestEmail` from guest contact form (§6.33) |
+| `cartQtyIncrease` | `{ "type": "cubitCall", "cubit": "cart", "method": "updateQuantity", "params": { "variantId": { "source": "item", "field": "variantId" }, "delta": { "source": "value", "value": 1 } } }` |
+| `cartQtyDecrease` | Same as `cartQtyIncrease` with `"value": -1` |
+| `verifyOtp` | `{ "type": "cubitCall", "cubit": "auth", "method": "verifyOtp", "requireValidForm": true, "formId": "otp-verify-form", "params": { "phone": { "source": "authState", "field": "phone" } } }` — OTP code from form field `otpCode` automatically |
+
+**Cart remove line** (inside cart line template): `{ "type": "cubitCall", "cubit": "cart", "method": "removeItem", "params": { "variantId": { "source": "item", "field": "variantId" } } }`
+
+> Never emit `increaseQuantity`, `decreaseQuantity`, or `lineId` in cart cubitCall params.
 
 > `buttonAction`, `link`, `href`, `destinationType` are **never** emitted inside `props`. Web `destinationType: "zone"` maps to `openBottomSheet`, `openDrawer`, or `navigate` when the zone key is known.
 
@@ -696,7 +718,7 @@ Unknown Lucide icons resolve to `help_outline`.
 | `aspectRatio` (string) | `aspectRatio` (number) | resolved |
 | `width` / `height` | `width` / `height` (numbers) | px stripped |
 | `align`, `maxWidth` | — | wrap caller in `container` instead |
-| `valueContext.path` | `urlPath` / `semanticsLabelPath` | see §9.5 |
+| `valueContext.path` | `urlPath` | see §9.5 — use static `semanticsLabel` / `alt` for a11y; no `semanticsLabelPath` |
 
 ---
 
@@ -1551,6 +1573,15 @@ Single-choice vertical radio list — used for payment/shipping/option pickers. 
 }
 ```
 
+| Item field | Notes |
+|-----------|-------|
+| `badge` | Small tag on the row (e.g. "المنزل" / "العمل") |
+| `removable: true` | Shows ✕ on the row |
+
+| Group prop | Notes |
+|-----------|-------|
+| `onItemRemove` | Action when ✕ is tapped; `dataContext.tap` carries `{ value, index, label }` — e.g. `cubitCall checkout.deleteAddress { addressId: { source: "tap", field: "value" } }` |
+
 ### 6.31 Conditional visibility (`visibleWhen`)
 
 Any node may carry `props.visibleWhen`:
@@ -1570,6 +1601,54 @@ Any node may carry `props.visibleWhen`:
 | `field` | form field id / pageState key / dataContext path |
 | `when` | `nonEmpty` (default) \| `isEmpty` \| `equals` |
 | `value` | Comparison value for `equals` |
+
+> For cubitCall param sources, see [G2b](#g2b--cubitcall-param-source-vocabulary) — `visibleWhen` accepts `source: "data"` but cubitCall params do not.
+
+### 6.32 SwitchField
+
+Labeled on/off toggle bound to `FormStateStore` — stores `"true"` / `"false"` strings. Web boolean toggles / checkbox-style single-boolean inputs map here.
+
+```json
+{
+  "id": "address-details-default-toggle",
+  "type": "switchField",
+  "props": {
+    "id": "isDefault",
+    "label": "تعيين كعنوان افتراضي",
+    "activeColor": "#1D4ED8"
+  }
+}
+```
+
+| Prop | Notes |
+|------|-------|
+| `id` / `controllerId` | FormStateStore key; value `"true"` / `"false"` |
+| `label` | Inline-start text (RTL-aware) |
+| `value` / `valuePath` | Initial state (form store wins) |
+| `activeColor`, `labelColor`, `fontSize`, `margin` | Styling |
+| `enabled` | Default `true` |
+| `onChanged` | Action dispatched with the new value |
+
+A `source: "form"` cubitCall param reads the `"true"` / `"false"` string (e.g. `isDefault` on `checkout.saveAddress`).
+
+### 6.33 Checkout address flow
+
+New checkout `cubitCall` methods the converter may target:
+
+| `method` | Purpose | Key params |
+|----------|---------|------------|
+| `pickAddressLocation` | Closes any sheet, pushes native map picker; `onSuccess` only on confirmed location | — |
+| `saveAddress` | Save address + recalc shipping | `label` (HOME/WORK/OTHER), `recipientName`, `recipientPhone`, `streetAddress`, `notes`, `isDefault` |
+| `selectSavedAddress` | Set delivery address + recalc | `addressId` (or radio `tap.value`) |
+| `deleteAddress` | Remove saved address | `addressId` |
+| `setDefaultAddress` | Server-side default flag | `addressId` |
+| `placeOrder` (extended) | Now accepts optional `guestEmail` | `guestEmail` from guest contact form |
+
+**dataContext keys for bindings:** `checkout.addressOptions` (radioGroup-ready items with `badge` / `removable`), `checkout.selectedAddressId`, `checkout.hasPendingLocation`, `checkout.pendingLocation.areaLine` / `.streetLine`, `session.isLoggedIn` (for `visibleWhen` — guest-only cards use `when: "equals", value: "false"`).
+
+**Locked contract:** guest email is a **checkout-payload field, not an address field** — never emit email inputs inside address forms; guest email lives in a guest-only contact card on `/checkout` → `placeOrder.params.guestEmail`.
+
+**No map component type** — the map screen is native; JSON reaches it only via `cubitCall checkout.pickAddressLocation`. Web map/location blocks with no such trigger → `unsupported` + warning.
 
 ---
 
@@ -1618,7 +1697,7 @@ When the input is a page object or array of page objects, the converter emits a 
     "initialRoute": "/splash",
     "shellExcludeRoutes": [
       "/splash", "/splash-carousel", "/auth/login", "/auth/otp-reset",
-      "/product/details", "/categories", "/checkout", "/checkout/address",
+      "/product/details", "/checkout", "/checkout/address",
       "/checkout/payment", "/checkout/success", "/orders"
     ],
     "tabs": [
@@ -1655,6 +1734,7 @@ When the input is a page object or array of page objects, the converter emits a 
 | `background` default | `"#ffffff"` |
 | Page chrome | Use page-level `background` + `scroll` — **never** emit a `scaffold` node in `body[]` |
 | Pinned CTA bars | `pages[].footer` — **never** end of `body[]` and never `stack` + `stackLayer: "positioned"` for page footers |
+| `shellExcludeRoutes` | **Generated** from system routes + every `pages[].route` that is not a tab root — never copy a static list verbatim per merchant. A route missing from `shellExcludeRoutes` crashes with a duplicate-page-key assert when pushed from another shell-excluded page. |
 
 ### Page-level `footer`
 
@@ -1735,6 +1815,15 @@ The `appBar` is built from the page `SiteHeader` block and `rootProps`:
 | `trailingAction` | tap action |
 | `cartVisiblePath` / `cartVisibleWhen` | conditional cart-icon visibility |
 | `titleAlign` | `start` (default) \| `center` \| `end` |
+
+**Gradient background** (two modes):
+
+| Prop | Behavior |
+|------|----------|
+| `backgroundGradient: true` | Theme-bound top→bottom gradient: `theme.colors.primary` → `theme.colors.background` |
+| `backgroundGradientTop` + `backgroundGradientBottom` | Explicit hex pair; wins over theme-bound |
+
+Rules: explicit pair is all-or-nothing (one alone → solid `backgroundColor` fallback); when gradient is active, `backgroundColor` has no visual effect; direction is fixed top→bottom. Map web header brand gradient → `backgroundGradient: true`; explicit web header gradient → hex pair via `rootProps.headerBackgroundGradientTop` / `headerBackgroundGradientBottom`.
 
 **RTL layout note:** appBar is internally LTR — cart + trailing icons render on the visual **left**, menu/back on the visual **right**. This is intended for Arabic apps.
 
@@ -1949,8 +2038,9 @@ Commerce UI uses **`Section` presets** + bound **`Group`** blocks + **`valueCont
 | `pricing.displayLineTotal` | `valuePath` | `item.lineTotal` |
 | `quantity` | `valuePath` | `item.quantity` |
 | `lineId` | `valuePath` | `item.lineId` |
-| `altValueContext` → `product.title` | `semanticsLabelPath` | `item.name` |
-| `labelValueContext` on button | `labelPath` | `item.name` |
+| `variantId` | `valuePath` | `item.variantId` |
+
+> **Not engine props:** `labelPath` on `button` and `semanticsLabelPath` on `image` are **not supported** — do not emit them. For dynamic text inside repeat templates, use a sibling `text` node with `valuePath`; keep button labels static (e.g. "+", "−", "أضف للسلة"). For image a11y, use static `semanticsLabel` / `alt` or omit.
 
 Static fallback values remain when `fallbackToStatic: true` (editor preview only; mobile uses paths at runtime).
 
@@ -1979,7 +2069,7 @@ Detected via `metadata.preset` or legacy `sectionKind`:
 | `ZonePopup` / `ZoneBottomSheet` | `openBottomSheet` when triggered by `ContentButton` `destinationType: "zone"` | Otherwise `unsupported` + warning |
 | `LoginButton` | Navigate stub to `/auth/login` or omitted when appBar handles auth | |
 | `CartIconButton` | Covered by `appBar.showCartIcon` when header present | |
-| `ContentHtml` | Stripped to plain `text` or omitted with warning | Hidden on mobile in web |
+| `ContentHtml` | → `richtext`, see §6.3 | |
 | `SiteDrawerShell` | Not in `body[]` — emitted as `appDrawer` on the page node | |
 | `Template` | Flattened (wrapper discarded) | |
 
@@ -2051,6 +2141,14 @@ Use this checklist before sending converter output to the engine.
 - [ ] No literal `"ghost"`/`"primary"` in output — §5 variant map applied (`ghost` → `text`)
 - [ ] Radio-style single-choice blocks → `radioGroup` (not column of buttons)
 - [ ] `openBottomSheet.child` is a full component node (root has `id`, `type`, `props`)
+- [ ] Cart quantity buttons → `cubitCall cart.updateQuantity` with `variantId` (`source: "item"`) + `delta` (`source: "value"`) — never `increaseQuantity`/`decreaseQuantity`, never `lineId`
+- [ ] cubitCall param `source` ∈ { `form`, `tap`, `item`, `dataContext`/`context`, `pageState`, `routeParams`, `authState`, `app`, `value` } — **`data` is only valid in `visibleWhen`**
+- [ ] No `labelPath` on `button`, no `semanticsLabelPath` on `image` — use static labels or sibling `text` + `valuePath`
+- [ ] `verifyOtp` includes `formId` + `params.phone` (`source: "authState"`)
+- [ ] Web boolean toggles → `switchField` (value stored as `"true"`/`"false"` strings)
+- [ ] AppBar gradient: `backgroundGradient: true` or the full explicit hex **pair** — never a single hex gradient prop
+- [ ] Every generated non-tab route appears in **both** `pages[]` and `navigation.shellExcludeRoutes`
+- [ ] No email fields in address forms — guest email goes to `/checkout` contact card → `placeOrder.params.guestEmail`
 
 ### API / data
 
@@ -2093,7 +2191,7 @@ These are by design — the mobile team should not expect different output for t
 |-------|--------|
 | `CategoryListMenu` | `unsupported` + warning |
 | `ProductSearchMenu` | `unsupported` + warning |
-| `SideDrawer` | `unsupported` (use `ZoneDrawer` → `appDrawer`) |
+| `SideDrawer` | Handled as `SiteDrawerShell` (generates `appDrawer`) |
 | `Blank` | omitted |
 | `ZonePopup` / `ZoneBottomSheet` | `openBottomSheet` only when zone trigger exists; else `unsupported` |
 
@@ -2115,4 +2213,4 @@ Accordion, Button, Card, ContactForm, ContentButton, ContentDivider, ContentHead
 
 ---
 
-*Source: `lib/transformer.ts` — last updated 2026-07-03. Revised per mobile team reviews (`CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*
+*Source: `lib/transformer.ts` — last updated 2026-07-05. Revised per mobile team reviews (`CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`, `CONVERTER-SPEC-REVIEW-2026-07-05.md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*

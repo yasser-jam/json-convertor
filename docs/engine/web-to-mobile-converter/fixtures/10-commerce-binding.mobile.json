@@ -4,11 +4,11 @@
   "notes": [
     "makeOrder ContentButton is emitted on pages[].footer, not in body[]",
     "valueContext product.title maps to valuePath item.name inside bound Group",
-    "cartQtyIncrease maps to cubitCall cart.increaseQuantity"
+    "cartQtyIncrease maps to cubitCall cart.updateQuantity with variantId + delta"
   ],
   "bodyContains": [
     { "type": "text", "props": { "valuePath": "item.name" } },
-    { "type": "button", "tap": { "type": "cubitCall", "cubit": "cart", "method": "increaseQuantity" } }
+    { "type": "button", "tap": { "type": "cubitCall", "cubit": "cart", "method": "updateQuantity" } }
   ],
   "footerContains": {
     "type": "button",
