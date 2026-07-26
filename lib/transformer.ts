@@ -29,40 +29,65 @@ const WEB_TYPE_ALIASES: Record<string, string> = {
   ContentDivider: "Divider",
   ContentIcon: "Icon",
   ContentHtml: "Html",
+  ContentLink: "Link",
+  ContentInput: "Input",
   VideoEmbed: "YouTube",
   ProductsGrid: "ProductGrid",
   OrderHistory: "OrderList",
+  CartItem: "Group",
+  ProductImageCarousel: "ProductGallery",
 };
 
 const UNSUPPORTED_LEAF_BLOCKS = new Set([
   "CategoryListMenu",
   "ProductSearchMenu",
+  "ProductVariants",
 ]);
 
-/** Binding context for valueContext → valuePath resolution inside Groups. */
-let _bindingContext: "product" | "cart" | null = null;
-let _pageStickyFooter: Record<string, unknown> | null = null;
-let _pageFooterOverlay = false;
-let _zoneSlots: Map<string, Record<string, unknown>[]> = new Map();
+/**
+ * Web presets, not persisted block types. A preset is an authoring shortcut that
+ * expands into ordinary blocks before the JSON is saved, so it must never reach the
+ * converter — seeing one means the web side saved an unexpanded tree.
+ */
+const PRESET_ONLY_TYPES = new Set(["CartList"]);
 
-const VALUE_CONTEXT_MAP: Record<string, { valuePath?: string; urlPath?: string }> = {
-  "product.title": { valuePath: "item.name" },
-  "product.description": { valuePath: "item.description" },
-  "images[0].url": { urlPath: "item.primaryImageUrl" },
-  "pricing.displayPrice": { valuePath: "item.price" },
-  "pricing.displayLineTotal": { valuePath: "item.lineTotal" },
-  quantity: { valuePath: "item.quantity" },
-  lineId: { valuePath: "item.lineId" },
-  variantId: { valuePath: "item.variantId" },
+/**
+ * Binding scope for `valueContext` → `valuePath` resolution inside bound Groups.
+ * `base` is the dataContext prefix every bound field hangs off:
+ *   - `"item"` inside a repeat template (cart line, grid item)
+ *   - `"dataContext.requests.<key>.data"` for a standalone product-bound Group
+ */
+type BindingScope = { kind: "product" | "cart"; base: string };
+let _bindingScope: BindingScope | null = null;
+/** One cart-line template per page — later `cartLineId` Groups are duplicates of the same list. */
+let _cartTemplateEmitted = false;
+let _warnedContainerRequest = false;
+let _pageStickyFooter: Record<string, unknown> | null = null;
+let _zoneSlots: Map<string, Record<string, unknown>[]> = new Map();
+/** Overlay zone keys that some tap actually opened — the rest are dead weight on this page. */
+let _zoneSlotsUsed: Set<string> = new Set();
+/** Zone keys that resolve to the page-level appDrawer (ZoneDrawer / SiteDrawerShell / SiteHeader.drawerName). */
+let _drawerZoneKeys: Set<string> = new Set();
+
+/** Web `valueContext.path` → the mobile field name, appended to the active binding base. */
+const VALUE_CONTEXT_MAP: Record<string, { valueField?: string; urlField?: string }> = {
+  "product.title": { valueField: "name" },
+  "product.description": { valueField: "description" },
+  "images[0].url": { urlField: "primaryImageUrl" },
+  "pricing.displayPrice": { valueField: "price" },
+  "pricing.displayLineTotal": { valueField: "lineTotal" },
+  quantity: { valueField: "quantity" },
+  lineId: { valueField: "lineId" },
+  variantId: { valueField: "variantId" },
 };
 
-function withBindingContext<T>(binding: "product" | "cart" | null, fn: () => T): T {
-  const prev = _bindingContext;
-  _bindingContext = binding;
+function withBindingScope<T>(scope: BindingScope | null, fn: () => T): T {
+  const prev = _bindingScope;
+  _bindingScope = scope;
   try {
     return fn();
   } finally {
-    _bindingContext = prev;
+    _bindingScope = prev;
   }
 }
 
@@ -77,35 +102,23 @@ function applyValueContext(
   kind: "text" | "image" | "button"
 ): void {
   const path = getValueContextPath(props);
-  if (path) {
+  if (path && _bindingScope) {
     const mapped = VALUE_CONTEXT_MAP[path];
-    if (mapped?.valuePath && (kind === "text" || kind === "button")) {
-      outProps.valuePath = mapped.valuePath;
+    const base = _bindingScope.base;
+    if (mapped?.valueField && (kind === "text" || kind === "button")) {
+      outProps.valuePath = `${base}.${mapped.valueField}`;
       delete outProps.value;
     }
-    if (mapped?.urlPath && kind === "image") {
-      outProps.urlPath = mapped.urlPath;
+    if (mapped?.urlField && kind === "image") {
+      outProps.urlPath = `${base}.${mapped.urlField}`;
       delete outProps.url;
+    }
+    if (!mapped) {
+      addWarning(`valueContext path "${path}" has no mobile field mapping; the static fallback value was kept`);
     }
   }
   // labelValueContext / altValueContext: engine has no labelPath or semanticsLabelPath —
   // use a sibling text node with valuePath for dynamic labels in repeat templates.
-}
-
-function getSectionPreset(props: Record<string, unknown>): string | null {
-  const meta = props.metadata as Record<string, unknown> | undefined;
-  if (meta?.preset) return meta.preset as string;
-  if (props.sectionKind) return props.sectionKind as string;
-  return null;
-}
-
-function rewriteAdminUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    return u.pathname.replace(/^\/admin\//, "/public/") + u.search;
-  } catch {
-    return url.replace(/^https?:\/\/[^/]+/, "").replace(/^\/admin\//, "/public/");
-  }
 }
 
 function normalizeBlockType(type: string): string {
@@ -120,7 +133,15 @@ const BUTTON_VARIANT_MAP: Record<string, string> = {
   outline: "outlined",
   ghost: "text",
   danger: "filled",
+  error: "filled",
 };
+
+/** `"theme-md"` / `"md"` / `"44|18|9|1rem"` → `sm` | `md` | `lg`. */
+function resolveButtonSizeToken(size: string | undefined): string {
+  if (!size) return "md";
+  const key = size.replace(/^theme-/, "");
+  return key === "sm" || key === "lg" ? key : "md";
+}
 
 function resolveButtonVariant(variant: string | undefined): string {
   if (!variant) return "elevated";
@@ -285,14 +306,31 @@ function buildCollectionRequestUrl(collection: string | Record<string, unknown>,
   return `/api/v1/public/collections/${encodeURIComponent(collectionId)}/products?page=0&size=${size}`;
 }
 
+/**
+ * `metadata.apiUrl` → a relative mobile path. Strips the host, rewrites `/admin/`
+ * to `/public/`, and guarantees the `/api/v1` prefix the engine expects
+ * (see 15-data-and-api-binding.md § Standard requestUrl paths).
+ */
 function normalizeAdminApiUrl(apiUrl: string): string {
+  let path = apiUrl;
+  let search = "";
   try {
     const url = new URL(apiUrl);
-    const path = url.pathname.replace(/^\/admin\//, "/public/");
-    return path + url.search;
+    path = url.pathname;
+    search = url.search;
   } catch {
-    return apiUrl.replace(/https?:\/\/[^/]+\/admin\//, "/api/v1/public/");
+    path = apiUrl.replace(/^https?:\/\/[^/]+/, "");
+    const q = path.indexOf("?");
+    if (q >= 0) {
+      search = path.slice(q);
+      path = path.slice(0, q);
+    }
   }
+
+  path = path.replace(/^\/admin\//, "/public/");
+  if (!path.startsWith("/")) path = `/${path}`;
+  if (!path.startsWith("/api/")) path = `/api/v1${path}`;
+  return path + search;
 }
 
 const FONT_WEIGHT_MAP: Record<string, string> = {
@@ -370,13 +408,15 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
     const zoneKey = (props.zoneKey as string) || "";
     const zoneAction = (props.zoneAction as string) || "open";
     if (zoneAction === "close") return { type: "closeBottomSheet" };
-    if (zoneKey === "login" || zoneKey === "site-drawer") {
+    if (_drawerZoneKeys.has(zoneKey)) return { type: "openDrawer" };
+    const slotBlocks = _zoneSlots.get(zoneKey);
+    if ((!slotBlocks || slotBlocks.length === 0) && (zoneKey === "login" || zoneKey === "site-drawer")) {
       return zoneKey === "login"
         ? { type: "navigate", route: "/auth/login", navigation_type: "push" }
         : { type: "openDrawer" };
     }
-    const slotBlocks = _zoneSlots.get(zoneKey);
     if (slotBlocks && slotBlocks.length > 0) {
+      _zoneSlotsUsed.add(zoneKey);
       const converted = slotBlocks.map((b) => transformBlock(b, rootProps)).filter(Boolean) as Record<string, unknown>[];
       const child = converted.length === 1
         ? converted[0]
@@ -419,6 +459,11 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
     return undefined;
   }
 
+  const redirect = (props.submitRedirectUrl as string) || "";
+  const onRedirect = redirect
+    ? { type: "navigate", route: normalizeRoute(redirect), navigation_type: "go" }
+    : undefined;
+
   switch (action) {
     case "login":
       return { type: "navigate", route: "/auth/login", navigation_type: "push" };
@@ -432,7 +477,10 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
     case "addToWishlist":
       return { type: "navigate", route: "/wishlist", navigation_type: "push" };
     case "makeOrder":
-      return { type: "cubitCall", cubit: "checkout", method: "placeOrder" };
+      return {
+        type: "cubitCall", cubit: "checkout", method: "placeOrder",
+        ...(onRedirect ? { onSuccess: onRedirect } : {}),
+      };
     case "cartQtyIncrease":
       return {
         type: "cubitCall", cubit: "cart", method: "updateQuantity",
@@ -454,6 +502,7 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
         type: "cubitCall", cubit: "auth", method: "verifyOtp",
         requireValidForm: true, formId: "otp-verify-form",
         params: { phone: { source: "authState", field: "phone" } },
+        ...(onRedirect ? { onSuccess: onRedirect } : {}),
       };
     default:
       return undefined;
@@ -582,7 +631,7 @@ function transformText(block: Record<string, unknown>, rootProps: Record<string,
     || resolveTextColor(props.color as string);
   if (textColor) (node.props as Record<string, unknown>).color = textColor;
 
-  if (_bindingContext) applyValueContext(props, node.props as Record<string, unknown>, "text");
+  if (_bindingScope) applyValueContext(props, node.props as Record<string, unknown>, "text");
 
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
@@ -596,7 +645,11 @@ function transformHeading(block: Record<string, unknown>, rootProps: Record<stri
     ? parseInt(levelRaw.replace("h", ""), 10)
     : parseInt(levelRaw, 10) || 2;
   const sizeMap: Record<number, number> = { 1: 28, 2: 22, 3: 18, 4: 16 };
-  const fontSize = resolveFontSize(props.size as string, sizeMap[levelNum] || 22);
+  const levelSize = resolveFontSize(props.size as string, sizeMap[levelNum] || 22);
+  // ContentHeading carries `fontSize` as a theme token; legacy Heading carries `size`.
+  const fontSize = props.fontSize
+    ? resolveThemeFontSize(props.fontSize as string, rootProps, levelSize)
+    : levelSize;
 
   const node: Record<string, unknown> = {
     id: generateId("heading"),
@@ -604,15 +657,16 @@ function transformHeading(block: Record<string, unknown>, rootProps: Record<stri
     props: {
       value: resolveBilingual(props.text as string, props.textAr as string, lang),
       fontSize,
-      fontWeight: levelNum <= 2 ? "bold" : "w600",
+      fontWeight: resolveThemeFontWeight(props.fontWeight as string) || (levelNum <= 2 ? "bold" : "w600"),
       textAlign: (props.align as string) || (props.textAlign as string) || (dir === "rtl" ? "right" : "left"),
     },
   };
 
-  const color = resolveColor(props.colorMode as string, props.colorTheme as string, props.colorFixed as string, rootProps);
+  const color = resolveColor(props.colorMode as string, props.colorTheme as string, props.colorFixed as string, rootProps)
+    || resolveThemeColor(props.color as string, rootProps);
   if (color) (node.props as Record<string, unknown>).color = color;
 
-  if (_bindingContext) applyValueContext(props, node.props as Record<string, unknown>, "text");
+  if (_bindingScope) applyValueContext(props, node.props as Record<string, unknown>, "text");
 
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
@@ -630,12 +684,18 @@ function transformSpace(block: Record<string, unknown>, rootProps: Record<string
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
-function transformButton(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+/** Returns `null` when the button is hoisted into the page-level sticky footer (makeOrder). */
+function transformButton(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> | null {
   const props = (block.props || {}) as Record<string, unknown>;
   const lang = (rootProps.language as string) || "ar";
   const label = resolveBilingual(props.label as string, props.labelAr as string, lang);
-  const size = (props.size as string) || (props.buttonVariantSize as string) || "md";
-  const fullWidth = (props.fullWidth as string) === "on" || props.fullWidth === true;
+  const isFixedMode = (props.buttonVariantMode as string) === "fixed";
+  const size = resolveButtonSizeToken(
+    (props.size as string)
+      || (isFixedMode ? (props.buttonSize as string) : (props.buttonVariantSize as string))
+  );
+  const fullWidth = (props.fullWidth as string) === "on" || props.fullWidth === true
+    || (props.submitWidth as string) === "full";
 
   const outProps: Record<string, unknown> = {
     label,
@@ -643,7 +703,10 @@ function transformButton(block: Record<string, unknown>, rootProps: Record<strin
   };
   if (size !== "md") outProps.height = BUTTON_SIZE_HEIGHT[size] || 48;
 
-  const btnColor = resolveColor(props.colorMode as string, props.colorTheme as string, props.colorFixed as string, rootProps);
+  // Fixed mode overrides the theme variant colours; only `color` is an engine button prop
+  // (`textColor` / `radius` have no equivalent — see CONVERTER-OUTPUT-SPEC §6.5).
+  const btnColor = resolveColor(props.colorMode as string, props.colorTheme as string, props.colorFixed as string, rootProps)
+    || (isFixedMode ? resolveThemeColor(props.bgColor as string, rootProps) : undefined);
   if (btnColor) outProps.color = btnColor;
   if (fullWidth) outProps.fullWidth = true;
 
@@ -671,7 +734,7 @@ function transformButton(block: Record<string, unknown>, rootProps: Record<strin
   };
   if (tap) node.tap = tap;
 
-  if (_bindingContext) applyValueContext(props, node.props as Record<string, unknown>, "button");
+  if (_bindingScope) applyValueContext(props, node.props as Record<string, unknown>, "button");
 
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
@@ -679,14 +742,178 @@ function transformButton(block: Record<string, unknown>, rootProps: Record<strin
 function transformLink(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
   const lang = (rootProps.language as string) || "ar";
-  const label = resolveBilingual(props.label as string, props.labelAr as string, lang);
+  // ContentLink stores its text in `title`; the legacy Link block uses `label` / `labelAr`.
+  const label = (props.title as string) || resolveBilingual(props.label as string, props.labelAr as string, lang);
 
   const outProps: Record<string, unknown> = { label, variant: "text" };
+
+  const color = resolveThemeColor(props.color as string, rootProps);
+  if (color) outProps.color = color;
+
+  const icon = props.icon as string;
+  if (icon && icon !== "none") {
+    addWarning(`ContentLink icon "${icon}" dropped; the engine \`button\` has no icon prop`);
+  }
+
   const tap = resolveLayoutTap(props, rootProps);
 
   const node: Record<string, unknown> = { id: generateId("link"), type: "button", props: outProps };
   if (tap) node.tap = tap;
 
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+// ─── Form input blocks ───────────────────────────────────────────────────────
+
+const INPUT_KEYBOARD_MAP: Record<string, string> = {
+  email: "email",
+  tel: "phone",
+  number: "number",
+  text: "text",
+  search: "text",
+  password: "text",
+};
+
+function transformInput(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const dir = (rootProps.direction as string) || "rtl";
+  const fieldId = (props.name as string) || (props.id as string) || "field";
+  const inputType = (props.inputType as string) || "text";
+  const isLtrField = inputType === "email" || inputType === "tel";
+
+  const outProps: Record<string, unknown> = {
+    id: fieldId,
+    label: (props.label as string) || "",
+    hint: (props.placeholder as string) || "",
+    textDirection: isLtrField ? "ltr" : dir === "rtl" ? "rtl" : "ltr",
+  };
+
+  const keyboardType = INPUT_KEYBOARD_MAP[inputType];
+  if (keyboardType && keyboardType !== "text") outProps.keyboardType = keyboardType;
+  if (inputType === "password") outProps.obscureText = true;
+  if (inputType === "email") outProps.validateEmail = true;
+  if (inputType === "tel") outProps.validatePhone = true;
+  if (props.required === true) outProps.validateRequired = true;
+  if ((props.prependIcon as string) === "search") outProps.prefixIcon = "search";
+
+  if ((props.inputAction as string) === "search_products") {
+    addWarning(
+      `ContentInput "${fieldId}" uses inputAction "search_products"; the mobile field is emitted without wiring — connect it to the search cubit manually`
+    );
+  }
+
+  const node: Record<string, unknown> = { id: generateId("input"), type: "textFormField", props: outProps };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformButtonGroup(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> | null {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const bindingMode = (props.bindingMode as string) || "static";
+
+  if (bindingMode !== "static") {
+    addWarning(
+      `ButtonGroup bindingMode "${bindingMode}" builds its items from runtime store data; no static mobile equivalent. Wire category filters / pagination manually.`
+    );
+    return { id: generateId("unsupported"), type: "unsupported", props: { blockType: "ButtonGroup" } };
+  }
+
+  const items = (props.items as Record<string, unknown>[]) || [];
+  if (items.length === 0) return null;
+
+  const selected = props.defaultSelectedValue as string;
+  const activeStyle = (props.activeStyle as Record<string, unknown>) || {};
+  const inactiveStyle = (props.inactiveStyle as Record<string, unknown>) || {};
+  const gap = resolveThemePx(props.gap as string, rootProps, 8);
+  const alignMap: Record<string, string> = { left: "start", center: "center", right: "end" };
+
+  addWarning(
+    "ButtonGroup selection state is not tracked on mobile; converted to a row of buttons with the default item styled as active"
+  );
+
+  const children = items.map((item) => {
+    const isActive = (item.value as string) === selected;
+    const style = isActive ? activeStyle : inactiveStyle;
+    const outProps: Record<string, unknown> = {
+      label: (item.title as string) || "",
+      variant: isActive ? "filled" : "outlined",
+    };
+    const bg = resolveThemeColor(style.bgColor as string, rootProps);
+    if (bg) outProps.color = bg;
+    const size = resolveButtonSizeToken(style.buttonSize as string);
+    if (size !== "md") outProps.height = BUTTON_SIZE_HEIGHT[size];
+
+    const tap = resolveTap(item, rootProps);
+    return {
+      id: generateId("btn-group-item"),
+      type: "button",
+      props: outProps,
+      ...(tap ? { tap } : {}),
+    };
+  });
+
+  const node: Record<string, unknown> = {
+    id: generateId("button-group"),
+    type: "row",
+    props: flexProps(alignMap[(props.align as string) || "center"] || "center", "center", { gap }),
+    children,
+  };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformChip(block: Record<string, unknown>, _rootProps: Record<string, unknown>): null {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const path = ((props.listValueContext as Record<string, unknown>)?.path as string) || "(unbound)";
+  addWarning(
+    `Chip renders a runtime array from "${path}"; the engine has no chip-list primitive and the path is not in the valueContext map — block skipped`
+  );
+  return null;
+}
+
+function transformCartQuantity(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const alignMap: Record<string, string> = { left: "start", center: "center", right: "end" };
+  const qtyAction = (delta: number) => ({
+    type: "cubitCall",
+    cubit: "cart",
+    method: "updateQuantity",
+    params: {
+      variantId: { source: "item", field: "variantId" },
+      delta: { source: "value", value: delta },
+    },
+  });
+
+  const node: Record<string, unknown> = {
+    id: generateId("cart-qty"),
+    type: "row",
+    props: flexProps(alignMap[(props.align as string) || "right"] || "end", "center", { gap: 8 }),
+    children: [
+      { id: generateId("cart-qty-dec"), type: "button", props: { label: "−", height: 36, variant: "outlined" }, tap: qtyAction(-1) },
+      { id: generateId("cart-qty-val"), type: "text", props: { valuePath: "item.quantity", fontSize: 14, textAlign: "center" } },
+      { id: generateId("cart-qty-inc"), type: "button", props: { label: "+", height: 36, variant: "outlined" }, tap: qtyAction(1) },
+    ],
+  };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformProductGallery(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const aspect = resolveAspectRatio((props.aspectRatio as string) || "square") ?? 1.0;
+  const radius = resolveThemePx((props.radius as string) || "theme-md", rootProps, 12);
+
+  addWarning(
+    "ProductImageCarousel thumbnail strip has no engine equivalent; converted to the bound main image only"
+  );
+
+  const outProps: Record<string, unknown> = {
+    source: "network",
+    fit: "cover",
+    aspectRatio: aspect,
+    borderRadius: radius,
+  };
+  if (_bindingScope) outProps.urlPath = `${_bindingScope.base}.primaryImageUrl`;
+  else outProps.url = (props.placeholderSrc as string) || "";
+
+  const node: Record<string, unknown> = { id: generateId("product-gallery"), type: "image", props: outProps };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
@@ -733,7 +960,7 @@ function transformImage(block: Record<string, unknown>, rootProps: Record<string
   if (w !== "100%" && !w.includes("auto")) outProps.width = parsePx(w);
   if (h !== "auto") outProps.height = parsePx(h);
 
-  if (_bindingContext) applyValueContext(props, outProps, "image");
+  if (_bindingScope) applyValueContext(props, outProps, "image");
 
   const node: Record<string, unknown> = { id: generateId("image"), type: "image", props: outProps };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
@@ -1111,86 +1338,12 @@ function transformSection(block: Record<string, unknown>, rootProps: Record<stri
   const props = (block.props || {}) as Record<string, unknown>;
   if (props.visible === false) return null;
 
-  const preset = getSectionPreset(props);
+  // Section presets (`metadata.preset`, legacy `sectionKind`) are a web authoring
+  // convenience only — by the time JSON reaches the converter the preset has already
+  // been expanded into ordinary blocks. Every Section converts the same way; the
+  // commerce behaviour lives on the blocks themselves (bound Group, cartLineId Group,
+  // makeOrder ContentButton).
   const children = getChildren(block);
-
-  if (preset === "shopping-cart") {
-    const lineGroups = children.filter((c) => (c.props as Record<string, unknown>)?.cartLineId);
-    const shellBlocks = children.filter((c) => !(c.props as Record<string, unknown>)?.cartLineId);
-    const shellConverted = shellBlocks.map((c) => transformBlock(c, rootProps)).filter(Boolean) as Record<string, unknown>[];
-
-    const sectionChildren = [...shellConverted];
-    if (lineGroups.length > 0) {
-      const template = withBindingContext("cart", () => transformBlock(lineGroups[0], rootProps));
-      if (template) {
-        sectionChildren.splice(Math.max(0, sectionChildren.length - 1), 0, {
-          id: generateId("cart-preset-list"),
-          type: "listView",
-          props: { emptyMessage: "السلة فارغة" },
-          itemBuilder: { type: "repeat", source: "cart.items", item: template },
-        });
-      }
-    }
-
-    const padH = parsePx(props.paddingHorizontal as string, 16);
-    return applyLayout(
-      {
-        id: generateId("section-cart-preset"),
-        type: "container",
-        props: {
-          padding: {
-            top: parsePx(props.paddingTop as string, 48),
-            bottom: parsePx(props.paddingBottom as string, 48),
-            left: padH,
-            right: padH,
-          },
-        },
-        child: {
-          id: generateId("section-cart-col"),
-          type: "column",
-          props: flexProps("start", "stretch", { gap: 16 }),
-          children: sectionChildren,
-        },
-      },
-      props.layout as Record<string, unknown> | undefined,
-      rootProps
-    );
-  }
-
-  if (preset === "products-grid" && children.length === 0) {
-    const collection = props.collection as Record<string, unknown> | string | undefined;
-    const collSlug = typeof collection === "string"
-      ? collection
-      : (collection?.slug as string) || (collection?.id as string) || "featured";
-    const meta = props.metadata as Record<string, unknown> | undefined;
-    const apiUrl = meta?.apiUrl
-      ? rewriteAdminUrl(meta.apiUrl as string)
-      : `/api/v1/public/collections/${collSlug}/products?page=0&size=20`;
-    const columns = parseInt(String(props.columns || 2), 10);
-
-    return applyLayout(
-      {
-        id: generateId("section-products-grid"),
-        type: "gridView",
-        props: {
-          crossAxisCount: columns,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 0.75,
-          requestKey: "product-list",
-          requestUrl: apiUrl,
-          emptyMessage: "لا توجد منتجات",
-        },
-        itemBuilder: {
-          type: "repeat",
-          source: "dataContext.requests.product-list.data",
-          item: buildProductGridItemTemplate("vertical"),
-        },
-      },
-      props.layout as Record<string, unknown> | undefined,
-      rootProps
-    );
-  }
 
   for (const child of children) {
     if ((child.type as string) === "Section") {
@@ -1363,10 +1516,70 @@ function transformFlex(block: Record<string, unknown>, rootProps: Record<string,
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
-function transformGroup(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+/** `metadata.apiUrl` → relative public path, or a public product path built from the picker ref. */
+function resolveProductRequestUrl(
+  metadata: Record<string, unknown> | undefined,
+  product: Record<string, unknown> | undefined
+): string {
+  if (metadata?.apiUrl) {
+    return normalizeAdminApiUrl(metadata.apiUrl as string);
+  }
+  const ref = (product?.slug as string) || (product?.id as string) || "";
+  return ref ? `/api/v1/public/products/${encodeURIComponent(ref)}` : "";
+}
+
+function transformGroup(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> | null {
   const props = (block.props || {}) as Record<string, unknown>;
-  const binding = props.cartLineId ? "cart" : props.product ? "product" : null;
-  return withBindingContext(binding, () => transformFlex(block, rootProps));
+
+  // A Group with `cartLineId` is a cart-row template, whatever section it sits in.
+  // Mobile cart lines are dynamic, so the first one becomes the list; the rest are
+  // the same row repeated by the web editor and would duplicate the whole cart.
+  if (props.cartLineId) {
+    if (_cartTemplateEmitted) {
+      addWarning(`Cart line Group "${props.cartLineId}" dropped; the cart already renders as one listView over cart.items`);
+      return null;
+    }
+    _cartTemplateEmitted = true;
+    const template = withBindingScope({ kind: "cart", base: "item" }, () => transformFlex(block, rootProps));
+    return {
+      id: generateId("cart-lines"),
+      type: "listView",
+      props: { emptyMessage: "السلة فارغة" },
+      itemBuilder: { type: "repeat", source: "cart.items", item: template },
+    };
+  }
+
+  // A Group with `product` is a card bound to one product: it owns its own request,
+  // so its children resolve against that request rather than a repeat item.
+  const product = props.product as Record<string, unknown> | undefined;
+  if (product) {
+    const productId = String(product.id || product.slug || generateId("product"));
+    const requestKey = `product-${productId}`;
+    const requestUrl = resolveProductRequestUrl(props.metadata as Record<string, unknown> | undefined, product);
+    const node = withBindingScope(
+      { kind: "product", base: `dataContext.requests.${requestKey}.data` },
+      () => transformFlex(block, rootProps)
+    );
+
+    if (!requestUrl) {
+      addWarning(`Bound Group for product "${productId}" has no metadata.apiUrl, id or slug; emitted without a request`);
+      return node;
+    }
+    if (!_warnedContainerRequest) {
+      _warnedContainerRequest = true;
+      addWarning(
+        "Product-bound Groups declare a per-card request (requestKey/requestUrl on the wrapping container) and bind children to dataContext.requests.<key>.data.* — confirm the engine resolves requests on container nodes"
+      );
+    }
+    return {
+      id: generateId("product-bound"),
+      type: "container",
+      props: { requestKey, requestUrl },
+      child: node,
+    };
+  }
+
+  return transformFlex(block, rootProps);
 }
 
 function transformLayoutGrid(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
@@ -1604,8 +1817,7 @@ function transformProductGrid(block: Record<string, unknown>, rootProps: Record<
 
   let requestUrl = buildCollectionRequestUrl(collection, maxProducts);
   if (metadata?.apiUrl) {
-    const normalized = normalizeAdminApiUrl(metadata.apiUrl as string);
-    requestUrl = normalized.startsWith("/") ? normalized : `/api/v1/public${normalized}`;
+    requestUrl = normalizeAdminApiUrl(metadata.apiUrl as string);
   }
 
   return {
@@ -1705,7 +1917,16 @@ function transformProductDetails(block: Record<string, unknown>, rootProps: Reco
   return applyLayout(node, (block.props as Record<string, unknown>).layout as Record<string, unknown> | undefined, rootProps);
 }
 
-function transformCartSection(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+/** Legacy `CartSection` / `CartList` — a generic cart list with a fixed row template. */
+function transformCartSection(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> | null {
+  // Shares the one-cart-list-per-page rule with `cartLineId` Groups: a page carrying
+  // both a legacy CartList and a modern cart-row Group would otherwise render twice.
+  if (_cartTemplateEmitted) {
+    addWarning(`${block.type as string} dropped; the cart already renders as one listView over cart.items`);
+    return null;
+  }
+  _cartTemplateEmitted = true;
+
   const node: Record<string, unknown> = {
     id: generateId("cart-list"),
     type: "listView",
@@ -1860,15 +2081,19 @@ function transformCheckoutSummary(block: Record<string, unknown>, rootProps: Rec
 }
 
 function transformOrderList(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
-  const maxOrders = parseInt(((block.props as Record<string, unknown>).maxOrders as string) || "10", 10);
+  const props = (block.props || {}) as Record<string, unknown>;
+  // BLOCKS.md OrderHistory uses `limit`; the legacy converter input used `maxOrders`.
+  const maxOrders = parseInt(String(props.maxOrders ?? props.limit ?? "10"), 10);
+  const statusFilter = (props.statusFilter as string) || "all";
   const requestKey = "order-history";
+  const statusQuery = statusFilter && statusFilter !== "all" ? `&status=${encodeURIComponent(statusFilter)}` : "";
   return {
     id: generateId("orders-list"),
     type: "listView",
     props: {
       requestKey,
-      requestUrl: `/api/v1/customer/orders?page=0&size=${maxOrders}`,
-      emptyMessage: "لا توجد طلبات بعد.",
+      requestUrl: `/api/v1/customer/orders?page=0&size=${maxOrders}${statusQuery}`,
+      emptyMessage: (props.emptyStateText as string) || "لا توجد طلبات بعد.",
     },
     itemBuilder: {
       type: "repeat",
@@ -2244,9 +2469,11 @@ function transformWishlist(block: Record<string, unknown>, rootProps: Record<str
       type: "gridView",
       props: {
         crossAxisCount: columns,
+        mainAxisSpacing: resolveGridGap(props.gap as string),
+        crossAxisSpacing: resolveGridGap(props.gap as string),
         requestKey,
         requestUrl: "/api/v1/customer/wishlist",
-        emptyMessage: "قائمة المفضلة فارغة.",
+        emptyMessage: (props.emptyStateText as string) || "قائمة المفضلة فارغة.",
       },
       itemBuilder: {
         type: "repeat",
@@ -2567,27 +2794,44 @@ function transformStats(block: Record<string, unknown>, rootProps: Record<string
 
 function transformContactForm(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
-  const lang = (rootProps.language as string) || "ar";
+  const lang = (props.language as string) || (rootProps.language as string) || "ar";
+  const ar = lang === "ar";
   const formId = (props.id as string) || "contact-form";
-  const fields = (props.fields as Record<string, unknown>[]) || [
-    { name: "name", label: lang === "ar" ? "الاسم" : "Name" },
-    { name: "email", label: lang === "ar" ? "البريد الإلكتروني" : "Email" },
-    { name: "message", label: lang === "ar" ? "الرسالة" : "Message" },
+
+  // BLOCKS.md ContactForm exposes field toggles rather than a `fields[]` array.
+  const defaultFields: Record<string, unknown>[] = [
+    { name: "name", label: ar ? "الاسم" : "Name" },
+    { name: "email", label: ar ? "البريد الإلكتروني" : "Email" },
+    ...(props.showPhone !== false
+      ? [{ name: "phone", label: ar ? "رقم الهاتف" : "Phone", required: props.requirePhone === true }]
+      : []),
+    ...(props.showSubject !== false ? [{ name: "subject", label: ar ? "الموضوع" : "Subject" }] : []),
+    { name: "message", label: ar ? "الرسالة" : "Message" },
   ];
+  const fields = (props.fields as Record<string, unknown>[]) || defaultFields;
+
+  if (props.enableCaptcha === true) {
+    addWarning("ContactForm CAPTCHA has no mobile equivalent; the converted form submits without it");
+  }
 
   const fieldNodes = fields.map((field) => {
     const fieldId = (field.name as string) || "";
+    const isLtrField = fieldId === "email" || fieldId === "phone";
     const fieldProps: Record<string, unknown> = {
       id: fieldId,
       label: (field.label as string) || "",
       hint: (field.placeholder as string) || "",
-      textDirection: fieldId === "email" ? "ltr" : ((rootProps.direction as string) === "rtl" ? "rtl" : "ltr"),
+      textDirection: isLtrField ? "ltr" : ((rootProps.direction as string) === "rtl" ? "rtl" : "ltr"),
     };
     if (fieldId === "email") {
       fieldProps.keyboardType = "email";
       fieldProps.validateEmail = true;
     }
-    if (fieldId === "name" || fieldId === "email") {
+    if (fieldId === "phone") {
+      fieldProps.keyboardType = "phone";
+      fieldProps.validatePhone = true;
+    }
+    if (fieldId === "name" || fieldId === "email" || field.required === true) {
       fieldProps.validateRequired = true;
     }
     if (fieldId === "message") {
@@ -2596,6 +2840,27 @@ function transformContactForm(block: Record<string, unknown>, rootProps: Record<
     }
     return { id: generateId("contact-field"), type: "textFormField", props: fieldProps };
   });
+
+  const headingNodes: Record<string, unknown>[] = [];
+  const title = props.title as Record<string, unknown> | string | undefined;
+  const subtitle = props.subtitle as Record<string, unknown> | string | undefined;
+  const bilingual = (v: Record<string, unknown> | string | undefined) =>
+    typeof v === "string" ? v : resolveBilingual(v?.en as string, v?.ar as string, lang);
+
+  if (bilingual(title)) {
+    headingNodes.push({
+      id: generateId("contact-title"),
+      type: "text",
+      props: { value: bilingual(title), fontSize: 22, fontWeight: "bold" },
+    });
+  }
+  if (bilingual(subtitle)) {
+    headingNodes.push({
+      id: generateId("contact-subtitle"),
+      type: "text",
+      props: { value: bilingual(subtitle), fontSize: 14, color: "#6b7d93" },
+    });
+  }
 
   const node: Record<string, unknown> = {
     id: generateId("contact-form"),
@@ -2606,15 +2871,16 @@ function transformContactForm(block: Record<string, unknown>, rootProps: Record<
       type: "column",
       props: flexProps("start", "stretch", { gap: 16 }),
       children: [
+        ...headingNodes,
         ...fieldNodes,
         {
           id: generateId("contact-submit"),
           type: "button",
           props: {
-            label: resolveBilingual(props.submitLabel as string, props.submitLabelAr as string, lang) || (lang === "ar" ? "إرسال" : "Submit"),
+            label: resolveBilingual(props.submitLabel as string, props.submitLabelAr as string, lang) || (ar ? "إرسال" : "Submit"),
             height: 48,
             variant: "elevated",
-            fullWidth: true,
+            fullWidth: (props.submitWidth as string) !== "auto",
           },
           tap: {
             type: "apiCall",
@@ -2657,8 +2923,12 @@ function transformNavMenu(block: Record<string, unknown>, rootProps: Record<stri
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
-function transformSidebar(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+function transformSidebar(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> | null {
   const props = (block.props || {}) as Record<string, unknown>;
+  if ((props.showOnMobile as string) === "hidden") {
+    addWarning("Sidebar has showOnMobile: \"hidden\"; block omitted");
+    return null;
+  }
   if (props.dock) addWarning("Sidebar dock prop is ignored on mobile; rendered as inline column");
 
   const children = getChildren(block);
@@ -2717,6 +2987,14 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
   if (layout?.hideOnMobile === true) return null;
 
   const rawType = (block.type as string) || "";
+
+  if (PRESET_ONLY_TYPES.has(rawType)) {
+    addWarning(
+      `"${rawType}" is a web preset, not a block — it should already be expanded into a cartLineId Group before export; skipped`
+    );
+    return null;
+  }
+
   const type = normalizeBlockType(rawType);
 
   switch (type) {
@@ -2742,7 +3020,10 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
     case "RichText": return transformRichText(block, rootProps);
     case "Space": return transformSpace(block, rootProps);
     case "Button": return transformButton(block, rootProps);
+    case "ButtonGroup": return transformButtonGroup(block, rootProps);
+    case "Chip": return transformChip(block, rootProps);
     case "Link": return transformLink(block, rootProps);
+    case "Input": return transformInput(block, rootProps);
     case "Icon": return transformIcon(block, rootProps);
     case "Image": return transformImage(block, rootProps);
     case "Video": return transformVideo(block, rootProps);
@@ -2767,8 +3048,10 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
     case "ProductCard": return transformProductCard(block, rootProps);
     case "ProductGrid": return transformProductGrid(block, rootProps);
     case "ProductCarousel": return transformProductCarousel(block, rootProps);
+    case "ProductGallery": return transformProductGallery(block, rootProps);
     case "ProductDetails": return transformProductDetails(block, rootProps);
     case "CartSection": return transformCartSection(block, rootProps);
+    case "CartQuantity": return transformCartQuantity(block, rootProps);
     case "CartSummary": return transformCartSummary(block, rootProps);
     case "CheckoutForm": return transformCheckoutForm(block, rootProps);
     case "CheckoutSummary": return transformCheckoutSummary(block, rootProps);
@@ -2794,12 +3077,20 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
     // Logo
     case "Logo": return transformLogo(block, rootProps);
 
-    // Shell blocks handled at page level — return null to skip
+    // Zone / shell blocks handled at page level — return null to skip
     case "SiteHeader":
     case "SiteFooter":
     case "SiteDrawerShell":
     case "SideDrawer":
+    case "ZoneDrawer":
       return null;
+
+    // Overlay zones only reach the body when nothing triggers them (they are
+    // otherwise inlined into `openBottomSheet` by resolveTap).
+    case "ZonePopup":
+    case "ZoneBottomSheet":
+      addWarning(`${rawType} "${(blockProps.key as string) || ""}" has no zone trigger on this page; emitted as unsupported`);
+      return { id: generateId("unsupported"), type: "unsupported", props: { blockType: rawType } };
 
     default: {
       if (UNSUPPORTED_LEAF_BLOCKS.has(type)) {
@@ -2985,45 +3276,93 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
   const label = (page.label as string) || (page.title as string) || "Page";
   const blocks = Array.isArray(page.blocks) ? (page.blocks as Record<string, unknown>[]) : [];
   const rootProps = (page.rootProps as Record<string, unknown>) || {};
-  const slugPart = path.replace(/^\//, "").replace(/\//g, "-") || "home";
+  const slugPart = path.replace(/^\//, "").replace(/[/:]/g, "-") || "home";
 
   _pageStickyFooter = null;
-  _pageFooterOverlay = false;
   _zoneSlots = new Map();
+  _zoneSlotsUsed = new Set();
+  _drawerZoneKeys = new Set();
+  _cartTemplateEmitted = false;
 
-  // Separate shell blocks from body blocks
+  // Separate zone / shell blocks from body blocks
   const bodyBlocks: Record<string, unknown>[] = [];
-  let hasHeader = false;
-  let hasFooter = false;
+  let headerBlock: Record<string, unknown> | null = null;
+  let footerBlock: Record<string, unknown> | null = null;
   let drawerBlock: Record<string, unknown> | null = null;
 
   for (const block of blocks) {
     const type = block.type as string;
     const bProps = (block.props || {}) as Record<string, unknown>;
-    if (type === "SiteHeader") { hasHeader = true; continue; }
-    if (type === "SiteFooter") { hasFooter = true; continue; }
+
+    if (type === "SiteHeader" || type === "SiteFooter") {
+      // `visible: false` (ZONES.md activation flag) keeps the zone out of the live site.
+      if (bProps.visible === false) continue;
+      if (type === "SiteHeader") headerBlock = block;
+      else footerBlock = block;
+      continue;
+    }
+
     if (type === "ZonePopup" || type === "ZoneBottomSheet") {
+      if (bProps.is_active === false) {
+        addWarning(`${type} "${(bProps.key as string) || ""}" is inactive (is_active: false); overlay skipped`);
+        continue;
+      }
       const key = (bProps.key as string) || type.toLowerCase();
-      const slot = (bProps.slot as Record<string, unknown>[]) || [];
-      _zoneSlots.set(key, slot);
+      _zoneSlots.set(key, (bProps.slot as Record<string, unknown>[]) || []);
       continue;
     }
+
     if (type === "SiteDrawerShell" || type === "SideDrawer" || type === "ZoneDrawer") {
-      drawerBlock = block as Record<string, unknown>;
+      const inactive = bProps.is_active === false || bProps.enabled === false || bProps.visible === false;
+      if (inactive) {
+        addWarning(`${type} "${(bProps.key as string) || (bProps.name as string) || ""}" is inactive; appDrawer skipped`);
+        continue;
+      }
+      const key = (bProps.key as string) || (bProps.name as string) || "site-drawer";
+      _drawerZoneKeys.add(key);
+      if (drawerBlock) addWarning(`Multiple drawer zones found; "${key}" dropped — mobile supports one appDrawer per page`);
+      else drawerBlock = block;
       continue;
     }
+
     bodyBlocks.push(block);
   }
+
+  const headerProps = (headerBlock?.props || {}) as Record<string, unknown>;
+  const headerDrawerName = (headerProps.drawerName as string) || "";
+  if (headerDrawerName) _drawerZoneKeys.add(headerDrawerName);
 
   // Convert body blocks
   const body = bodyBlocks.map((b) => transformBlock(b, rootProps)).filter(Boolean) as Record<string, unknown>[];
 
-  // Build appBar from SiteHeader / root props
-  const headerTitle = (rootProps.headerBrandTitle as string) || label;
-  const headerBg = (rootProps.headerBackgroundColor as string) || "#ffffff";
-  const headerFg = (rootProps.headerTextColor as string) || "#0f172a";
-  const showDrawer = (rootProps.headerShowDrawerButton as string) === "on" || rootProps.headerShowDrawerButton === true || drawerBlock !== null;
-  const showCartIcon = (rootProps.headerShowCart as string) !== "off";
+  // An overlay zone only reaches mobile through the tap that opens it (openBottomSheet).
+  // Anything left unopened on this page would silently disappear.
+  for (const [key, slot] of _zoneSlots) {
+    if (slot.length > 0 && !_zoneSlotsUsed.has(key)) {
+      addWarning(
+        `Overlay zone "${key}" is never opened on route "${path}"; nothing triggers it, so its content was dropped. Add a ContentButton with destinationType "zone" and zoneKey "${key}".`
+      );
+    }
+  }
+
+  // Build appBar from the SiteHeader block, falling back to root props
+  const headerTitle = (headerProps.title as string) || (rootProps.headerBrandTitle as string) || label;
+  const headerBg = (headerProps.backgroundColor as string) || (rootProps.headerBackgroundColor as string) || "#ffffff";
+  const headerFg = (headerProps.textColor as string) || (rootProps.headerTextColor as string) || "#0f172a";
+  const showDrawer = headerProps.showDrawerButton === true
+    || (rootProps.headerShowDrawerButton as string) === "on"
+    || rootProps.headerShowDrawerButton === true
+    || drawerBlock !== null;
+
+  const rightSlot = (headerProps.rightSlot as Record<string, unknown>[]) || [];
+  const hasCartInSlot = rightSlot.some((b) => (b.type as string) === "CartIconButton");
+  const unmappedSlot = rightSlot.filter((b) => (b.type as string) !== "CartIconButton");
+  if (unmappedSlot.length > 0) {
+    addWarning(
+      `SiteHeader.rightSlot blocks [${unmappedSlot.map((b) => b.type).join(", ")}] have no appBar equivalent; wire them as appBar trailing actions manually`
+    );
+  }
+  const showCartIcon = hasCartInSlot || (rootProps.headerShowCart as string) !== "off";
 
   const appBarProps: Record<string, unknown> = {
     title: headerTitle || label,
@@ -3063,12 +3402,21 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
   };
 
   // Build footer — page-level slot, not body[]
-  const siteFooterNode = hasFooter ? buildFooter(rootProps) : null;
+  const siteFooterNode = footerBlock ? buildFooter(footerBlock, rootProps) : null;
   const stickyFooter = _pageStickyFooter;
   const footerNode = stickyFooter || siteFooterNode;
 
-  // Build appDrawer when drawer shell / ZoneDrawer is present
-  const appDrawer = drawerBlock ? buildAppDrawer(drawerBlock, rootProps) : undefined;
+  // Build appDrawer from the drawer zone, or from SiteHeader nav links when the
+  // header exposes a burger button but the merchant defined no drawer zone.
+  let appDrawer: Record<string, unknown> | undefined;
+  if (drawerBlock) {
+    appDrawer = buildAppDrawer(drawerBlock, rootProps);
+  } else if (showDrawer && Array.isArray(headerProps.links) && (headerProps.links as unknown[]).length > 0) {
+    appDrawer = buildAppDrawer(
+      { type: "ZoneDrawer", props: { links: headerProps.links, side: "left" } },
+      rootProps
+    );
+  }
 
   const pageNode: Record<string, unknown> = {
     id: `page-${slugPart}`,
@@ -3093,16 +3441,58 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
   return pageNode;
 }
 
-function buildFooter(rootProps: Record<string, unknown>): Record<string, unknown> | null {
+function buildFooterLinkNode(
+  link: Record<string, unknown>,
+  lang: string,
+  fg: string,
+  rootProps: Record<string, unknown>
+): Record<string, unknown> {
+  // Web footers carry a structured LinkValue; legacy root-prop footers carry `href`.
+  const tap = resolveLayoutTap(link, rootProps)
+    || { type: "navigate", route: normalizeRoute("/"), navigation_type: "push" };
+  return {
+    id: generateId("footer-link"),
+    type: "button",
+    props: {
+      label: resolveBilingual(link.label as string, link.labelAr as string, lang),
+      height: 32,
+      variant: "text",
+      color: fg,
+    },
+    tap,
+  };
+}
+
+function buildFooter(
+  footerBlock: Record<string, unknown> | null,
+  rootProps: Record<string, unknown>
+): Record<string, unknown> | null {
+  const props = (footerBlock?.props || {}) as Record<string, unknown>;
+  if (props.visible === false) return null;
   if ((rootProps.footerVisible as string) === "false" || rootProps.footerVisible === false) return null;
 
-  const lang = (rootProps.language as string) || "ar";
-  const tagline = resolveBilingual(rootProps.footerTagline as string, rootProps.footerTaglineAr as string, lang);
-  const bg = (rootProps.footerBackgroundColor as string) || "#10213a";
-  const fg = (rootProps.footerTextColor as string) || "#ffffff";
-  const columns = (rootProps.footerColumns as Record<string, unknown>[]) || [];
+  const lang = (props.language as string) || (rootProps.language as string) || "ar";
+  const bg = (props.backgroundColor as string) || (rootProps.footerBackgroundColor as string) || "#10213a";
+  const fg = (props.textColor as string) || (rootProps.footerTextColor as string) || "#ffffff";
+  const title = (props.title as string) || "";
+  const tagline = resolveBilingual(
+    (props.tagline as string) || (rootProps.footerTagline as string),
+    (props.taglineAr as string) || (rootProps.footerTaglineAr as string),
+    lang
+  );
+  const columns = (props.columns as Record<string, unknown>[])
+    || (rootProps.footerColumns as Record<string, unknown>[])
+    || [];
 
   const children: Record<string, unknown>[] = [];
+
+  if (title) {
+    children.push({
+      id: generateId("footer-title"),
+      type: "text",
+      props: { value: title, fontSize: 16, fontWeight: "bold", color: fg },
+    });
+  }
 
   if (tagline) {
     children.push({
@@ -3113,24 +3503,42 @@ function buildFooter(rootProps: Record<string, unknown>): Record<string, unknown
   }
 
   for (const col of columns) {
-    const title = resolveBilingual(col.title as string, (col as Record<string, unknown>).titleAr as string, lang);
+    const colTitle = resolveBilingual(col.title as string, col.titleAr as string, lang);
     const links = (col.links as Record<string, unknown>[]) || [];
-    const linkNodes = links.map((link) => ({
-      id: generateId("footer-link"),
-      type: "button",
-      props: { label: resolveBilingual(link.label as string, (link as Record<string, unknown>).labelAr as string, lang), height: 32, variant: "text" },
-      tap: { type: "navigate", route: normalizeRoute((link.href as string) || "/"), navigation_type: "push" },
-    }));
+    const linkNodes = links.map((link) => buildFooterLinkNode(link, lang, fg, rootProps));
 
-    if (title) {
+    if (colTitle || linkNodes.length > 0) {
       children.push({
         id: generateId("footer-col"),
         type: "column",
         props: { crossAxisAlignment: "start", mainAxisAlignment: "start", gap: 4 },
         children: [
-          { id: generateId("footer-col-title"), type: "text", props: { value: title, fontSize: 14, fontWeight: "bold", color: fg } },
+          ...(colTitle
+            ? [{ id: generateId("footer-col-title"), type: "text", props: { value: colTitle, fontSize: 14, fontWeight: "bold", color: fg } }]
+            : []),
           ...linkNodes,
         ],
+      });
+    }
+  }
+
+  if (props.showBottomBar !== false) {
+    const bottomText = resolveBilingual(props.bottomBarText as string, props.bottomBarTextAr as string, lang);
+    const bottomLinks = (props.bottomLinks as Record<string, unknown>[]) || [];
+
+    if (bottomLinks.length > 0) {
+      children.push({
+        id: generateId("footer-bottom-links"),
+        type: "row",
+        props: flexProps("center", "center", { gap: 8 }),
+        children: bottomLinks.map((link) => buildFooterLinkNode(link, lang, fg, rootProps)),
+      });
+    }
+    if (bottomText) {
+      children.push({
+        id: generateId("footer-bottom-text"),
+        type: "text",
+        props: { value: bottomText, fontSize: 12, color: fg, textAlign: "center" },
       });
     }
   }
@@ -3150,6 +3558,91 @@ function buildFooter(rootProps: Record<string, unknown>): Record<string, unknown
   };
 }
 
+// ─── SiteData ingest (ZONES.md / BLOCKS.md envelope) ────────────────────────
+
+/** Zone bucket order — header first, footer last, overlays in between. */
+const ZONE_ORDER = ["zone-header", "zone-drawer", "zone-popup", "zone-bottom-sheet", "zone-footer"];
+
+/**
+ * `root:zone-header` | `zone:header` | `root:shell-left-zone` → `zone-header` | `zone-drawer`.
+ * Mirrors `canonicalZoneName()` in the web editor (ZONES.md § Migration notes).
+ */
+function canonicalZoneName(key: string): string {
+  let name = String(key || "").trim();
+  if (name.startsWith("root:")) name = name.slice("root:".length);
+  name = name.replace(/^zone:/, "zone-");
+  if (name === "shell-left-zone" || name === "shell-right-zone") return "zone-drawer";
+  return name;
+}
+
+function collectZoneBlocks(zones: unknown): Record<string, unknown>[] {
+  if (!zones || typeof zones !== "object") return [];
+
+  const buckets = new Map<string, Record<string, unknown>[]>();
+  for (const [key, value] of Object.entries(zones as Record<string, unknown>)) {
+    if (!Array.isArray(value) || value.length === 0) continue;
+    const name = canonicalZoneName(key);
+    buckets.set(name, [...(buckets.get(name) || []), ...(value as Record<string, unknown>[])]);
+  }
+
+  const ordered: Record<string, unknown>[] = [];
+  for (const name of ZONE_ORDER) ordered.push(...(buckets.get(name) || []));
+  for (const [name, blocks] of buckets) {
+    if (ZONE_ORDER.includes(name)) continue;
+    addWarning(`Unknown zone "${name}"; its blocks were converted into the page body`);
+    ordered.push(...blocks);
+  }
+  return ordered;
+}
+
+/** True for a web `SiteData` payload or a single-page Puck `UserData` payload. */
+function isSiteDataEnvelope(obj: Record<string, unknown>): boolean {
+  if (Array.isArray(obj.pages)) return true;
+  return Boolean(obj.root) && (Array.isArray(obj.content) || Boolean(obj.zones));
+}
+
+/** `{ root, zones, pages }` → the converter's `{ path, label, rootProps, blocks }` page shells. */
+function normalizeSiteData(site: Record<string, unknown>): Record<string, unknown>[] {
+  const root = site.root as Record<string, unknown> | undefined;
+  const rootProps = (root?.props as Record<string, unknown>) || {};
+  const zoneBlocks = collectZoneBlocks(site.zones);
+
+  const rawPages = Array.isArray(site.pages) && site.pages.length > 0
+    ? (site.pages as Record<string, unknown>[])
+    : [{ path: "/", name: rootProps.title, content: Array.isArray(site.content) ? site.content : [] }];
+
+  return rawPages.map((page) => {
+    // Dynamic routes keep the web path verbatim (`/products/:product-slug`) — the
+    // engine resolves `:param` from the repeat item / route params.
+    const path = (page.path as string) || (page.slug as string) || (page.link as string) || "/";
+    const content = Array.isArray(page.content) ? (page.content as Record<string, unknown>[]) : [];
+    return {
+      path,
+      label: (page.title as string) || (page.name as string) || (page.label as string) || "Page",
+      rootProps,
+      blocks: [...zoneBlocks, ...content],
+      ...(page.background ? { background: page.background } : {}),
+      ...(page.scroll ? { scroll: page.scroll } : {}),
+    };
+  });
+}
+
+function buildEnvelope(pages: Record<string, unknown>[], rootProps: Record<string, unknown>): Record<string, unknown> {
+  return {
+    schemaVersion: "1.0",
+    app: {
+      name: "SOOQ Merchant Mobile",
+      bundleId: "com.sooq.merchant.mobile",
+      apiBaseUrl: "https://sooq.up.railway.app",
+      tenantId: "00000000-0000-0000-0000-000000000000",
+      tenantSlug: "example-merchant",
+    },
+    theme: transformTheme(rootProps),
+    navigation: transformNavigation(rootProps, pages),
+    pages,
+  };
+}
+
 // ─── Main Entry Point ───────────────────────────────────────────────────────
 
 export type TransformResult =
@@ -3164,6 +3657,7 @@ function successResult(output: unknown): TransformResult {
 export function transformWebToMobile(input: string): TransformResult {
   resetIdCounter();
   resetWarnings();
+  _warnedContainerRequest = false;
 
   let parsed: unknown;
   try {
@@ -3179,20 +3673,7 @@ export function transformWebToMobile(input: string): TransformResult {
       if (isPageArray) {
         const pages = (parsed as Record<string, unknown>[]).map(transformPage);
         const rootProps = ((parsed[0] as Record<string, unknown>).rootProps as Record<string, unknown>) || {};
-        const output = {
-          schemaVersion: "1.0",
-          app: {
-            name: "SOOQ Merchant Mobile",
-            bundleId: "com.sooq.merchant.mobile",
-            apiBaseUrl: "https://sooq.up.railway.app",
-            tenantId: "00000000-0000-0000-0000-000000000000",
-            tenantSlug: "example-merchant",
-          },
-          theme: transformTheme(rootProps),
-          navigation: transformNavigation(rootProps, pages),
-          pages,
-        };
-        return successResult(output);
+        return successResult(buildEnvelope(pages, rootProps));
       }
 
       const rootProps = {};
@@ -3202,23 +3683,18 @@ export function transformWebToMobile(input: string): TransformResult {
 
     const obj = parsed as Record<string, unknown>;
 
+    // Web `SiteData` / Puck `UserData`: { root, zones, pages | content }
+    if (isSiteDataEnvelope(obj)) {
+      const rootProps = ((obj.root as Record<string, unknown> | undefined)?.props as Record<string, unknown>) || {};
+      const pageShells = normalizeSiteData(obj);
+      const pages = pageShells.map(transformPage);
+      return successResult(buildEnvelope(pages, rootProps));
+    }
+
     if (typeof obj.path === "string" || typeof obj.blocks !== "undefined") {
       const rootProps = (obj.rootProps as Record<string, unknown>) || {};
       const page = transformPage(obj);
-      const output = {
-        schemaVersion: "1.0",
-        app: {
-          name: "SOOQ Merchant Mobile",
-          bundleId: "com.sooq.merchant.mobile",
-          apiBaseUrl: "https://sooq.up.railway.app",
-          tenantId: "00000000-0000-0000-0000-000000000000",
-          tenantSlug: "example-merchant",
-        },
-        theme: transformTheme(rootProps),
-        navigation: transformNavigation(rootProps, []),
-        pages: [page],
-      };
-      return successResult(output);
+      return successResult(buildEnvelope([page], rootProps));
     }
 
     const rootProps = {};
@@ -3235,6 +3711,75 @@ export function transformWebToMobile(input: string): TransformResult {
 const PK = (o: Record<string, unknown>) => JSON.stringify(o, null, 2);
 
 export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
+  {
+    label: "Site JSON (root + zones + pages)",
+    json: PK({
+      root: {
+        props: {
+          title: "متجري", direction: "rtl", language: "ar",
+          primary: "#0b78c5", surface: "#f6f8fc", text: "#14243f", neutral: "#6b7d93",
+          bodyFont: "dm-sans", radiusMd: "12px",
+        },
+      },
+      zones: {
+        "root:zone-header": [{
+          type: "SiteHeader",
+          props: {
+            title: "متجري", visible: true, showDrawerButton: true, drawerName: "site-drawer",
+            backgroundColor: "#ffffff", textColor: "#0f172a",
+            links: [
+              { label: "Home", labelAr: "الرئيسية", link: { kind: "page", pageId: "/" } },
+              { label: "Products", labelAr: "المنتجات", link: { kind: "page", pageId: "/products" } },
+            ],
+            rightSlot: [{ type: "CartIconButton", props: { href: "/cart" } }],
+          },
+        }],
+        "root:zone-footer": [{
+          type: "SiteFooter",
+          props: {
+            visible: true, taglineAr: "متجرك الشامل.", showBottomBar: true, bottomBarTextAr: "© ٢٠٢٦ متجري",
+            columns: [{
+              title: "Shop", titleAr: "التسوق",
+              links: [{ label: "Products", labelAr: "المنتجات", link: { kind: "page", pageId: "/products" } }],
+            }],
+          },
+        }],
+        "root:zone-drawer": [{
+          type: "ZoneDrawer",
+          props: {
+            is_active: true, key: "site-drawer", side: "left", backgroundColor: "#ffffff",
+            slot: [{ type: "ContentHeading", props: { text: "القائمة", fontSize: "theme-lg" } }],
+          },
+        }],
+        "root:zone-popup": [{
+          type: "ZonePopup",
+          props: {
+            is_active: true, key: "login",
+            slot: [
+              { type: "ContentHeading", props: { text: "تسجيل الدخول" } },
+              { type: "ContentInput", props: { label: "رقم الهاتف", name: "phone", inputType: "tel", required: true } },
+              { type: "ContentButton", props: { label: "دخول", destinationType: "action", buttonAction: "login" } },
+            ],
+          },
+        }],
+        "root:zone-bottom-sheet": [],
+      },
+      pages: [{
+        path: "/", slug: "/", name: "الرئيسية", title: "الرئيسية",
+        content: [{
+          type: "Section",
+          props: {
+            name: "Hero", paddingTop: "48px", paddingBottom: "48px", paddingHorizontal: "24px",
+            content: [
+              { type: "ContentHeading", props: { text: "مرحباً بك", level: "1", textAlign: "center", fontSize: "theme-xl", color: "theme-primary" } },
+              { type: "ContentParagraph", props: { text: "أفضل المنتجات بأفضل الأسعار", textAlign: "center", fontSize: "theme-md", color: "theme-neutral" } },
+              { type: "ContentButton", props: { label: "تسجيل الدخول", destinationType: "zone", zoneKey: "login", zoneAction: "open" } },
+            ],
+          },
+        }],
+      }],
+    }),
+  },
   {
     label: "Page Shell (Envelope)",
     json: PK({

@@ -51,7 +51,14 @@ function detectRules(json: string): string[] {
   try {
     const parsed = JSON.parse(json);
     const str = JSON.stringify(parsed);
+    if (/"zones"\s*:/.test(str) || (/"root"\s*:/.test(str) && /"pages"\s*:/.test(str))) rules.push("SiteData (root+zones+pages) → Full Envelope");
     if (/"path"\s*:/.test(str) && /"blocks"\s*:/.test(str)) rules.push("Page Shell → Full Envelope");
+    if (/"type"\s*:\s*"ContentLink"/.test(str)) rules.push("ContentLink → button (text)");
+    if (/"type"\s*:\s*"ContentInput"/.test(str)) rules.push("ContentInput → textFormField");
+    if (/"type"\s*:\s*"ButtonGroup"/.test(str)) rules.push("ButtonGroup → row of buttons");
+    if (/"type"\s*:\s*"Chip"/.test(str)) rules.push("Chip → skipped (data-bound)");
+    if (/"type"\s*:\s*"CartQuantity"/.test(str)) rules.push("CartQuantity → qty stepper row");
+    if (/"type"\s*:\s*"Zone(Drawer|Popup|BottomSheet)"/.test(str)) rules.push("Zones → appDrawer / openBottomSheet");
     if (/"type"\s*:\s*"Section"/.test(str)) rules.push("Section → container+column");
     if (/"type"\s*:\s*"(FlexGroup|Flex|Group|Div)"/.test(str)) rules.push("Flex/Group → row/column");
     if (/"type"\s*:\s*"Grid"/.test(str) && !/"ProductGrid"/.test(str)) rules.push("Grid Layout → column of rows");
@@ -107,11 +114,11 @@ function getApplicableBadge(json: string): { label: string; color: string } | nu
 }
 
 export default function ConverterPage() {
-  const [input, setInput] = useState(EXAMPLE_PRESETS[5].json);
+  const [input, setInput] = useState(EXAMPLE_PRESETS[0].json);
   const [output, setOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copiedOutput, setCopiedOutput] = useState(false);
-  const [activePreset, setActivePreset] = useState(5);
+  const [activePreset, setActivePreset] = useState(0);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [detectedRules, setDetectedRules] = useState<string[]>([]);
 
@@ -136,7 +143,7 @@ export default function ConverterPage() {
 
   // Run on mount with default preset
   useEffect(() => {
-    runTransform(EXAMPLE_PRESETS[5].json);
+    runTransform(EXAMPLE_PRESETS[0].json);
   }, [runTransform]);
 
   const handleInputChange = (value: string) => {
@@ -153,8 +160,8 @@ export default function ConverterPage() {
   };
 
   const handleReset = () => {
-    handlePresetSelect(5);
-    setActivePreset(5);
+    handlePresetSelect(0);
+    setActivePreset(0);
   };
 
   const handleCopyOutput = async () => {

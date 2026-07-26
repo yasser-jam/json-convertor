@@ -6,6 +6,29 @@ Status legend: **full** = converts with documented mapping; **partial** = decomp
 
 ---
 
+## Update 2026-07-26 — web parity pass
+
+The tables below predate the current BLOCKS.md / ZONES.md revision. Closed since:
+
+| Was | Now |
+|---|---|
+| Raw `{ root, zones, pages }` had to be normalized by hand before transform | `transformWebToMobile` ingests `SiteData` / Puck `UserData` directly (`normalizeSiteData`); zone keys canonicalised, zones applied to every page |
+| `appBar` / footer built only from `rootProps.header*` / `footer*` | Built from the `SiteHeader` / `SiteFooter` **block props** (title, colors, links, columns, bottomLinks, `visible`), with the root props as fallback |
+| `ContentLink`, `ContentInput`, `ButtonGroup`, `Chip`, `CartItem`, `CartQuantity`, `ProductImageCarousel`, `ProductVariants` unknown → dropped | All dispatched (see CONVERTER-OUTPUT-SPEC §3 / §10) |
+| `CartList` treated as a block | Reclassified as a **preset** — skipped with a warning; a cart list is authored as a `cartLineId` Group |
+| `ContactForm` **unsupported** | **full** — `form` + `textFormField` honouring `showPhone` / `showSubject` / `submitLabel` |
+| `NavMenu` **unsupported** | **full** — `column` of text buttons |
+| `Sidebar` **unsupported** | **partial** — inline column; omitted when `showOnMobile: "hidden"` |
+| `ZonePopup` with the documented default key `login` never rendered its slot | Slot content wins; the `/auth/login` navigate is only a fallback for keyless zones |
+| `Section` branched on `metadata.preset` (`products-grid` / `shopping-cart`) | **Presets are ignored.** Conversion is block-level: presets only batch-insert blocks on web, so every Section converts identically and commerce behaviour lives on the blocks (bound `Group`, `cartLineId` `Group`, `makeOrder` button) |
+| `metadata.apiUrl` produced `requestUrl` without the `/api/v1` prefix | `normalizeAdminApiUrl` now guarantees `/api/v1/public/...` |
+
+**Binding scopes** — `valueContext` no longer always maps to `item.*`. A `cartLineId` Group (a repeat template) binds to `item.*`; a `product`-bound Group is a standalone card that owns its request and binds to `dataContext.requests.product-<id>.data.*`. See CONVERTER-OUTPUT-SPEC §9.5 for the open question about requests declared on container nodes.
+
+Dynamic page routes keep the web path verbatim (`/products/:product-slug`) by design.
+
+---
+
 ## What's new in BLOCKS.md (converter impact)
 
 | Change | Affected blocks | Converter action |

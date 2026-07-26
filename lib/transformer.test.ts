@@ -1004,7 +1004,7 @@ describe("transformWebToMobile", () => {
       expect((btn.props as Record<string, unknown>).height).toBeUndefined();
     });
 
-    it("maps valueContext on ContentHeading inside bound Group", () => {
+    it("binds a product Group to its own request and maps child valueContext to it", () => {
       const input = {
         path: "/vc",
         label: "VC",
@@ -1014,7 +1014,8 @@ describe("transformWebToMobile", () => {
           props: { paddingTop: "0", paddingBottom: "0", content: [{
             type: "Group",
             props: {
-              product: { id: "p1", titleAr: "قميص" },
+              product: { id: "p1", titleAr: "قميص", slug: "classic-shirt" },
+              metadata: { type: "product", method: "get", id: "p1", apiUrl: "https://api.example.com/admin/products/classic-shirt?include=PRICING" },
               content: [{
                 type: "ContentHeading",
                 props: { text: "fallback", valueContext: { path: "product.title" } },
@@ -1025,8 +1026,31 @@ describe("transformWebToMobile", () => {
       };
       const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
       const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
-      const heading = (((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0].children as Record<string, unknown>[])[0];
-      expect((heading.props as Record<string, unknown>).valuePath).toBe("item.name");
+      const bound = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0];
+      const boundProps = bound.props as Record<string, unknown>;
+      expect(boundProps.requestKey).toBe("product-p1");
+      expect(boundProps.requestUrl).toBe("/api/v1/public/products/classic-shirt?include=PRICING");
+      const heading = ((bound.child as Record<string, unknown>).children as Record<string, unknown>[])[0];
+      expect((heading.props as Record<string, unknown>).valuePath).toBe("dataContext.requests.product-p1.data.name");
+    });
+
+    it("falls back to a public product path when a bound Group has no metadata", () => {
+      const input = {
+        path: "/vc2",
+        label: "VC2",
+        rootProps: { language: "ar", direction: "rtl", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: { paddingTop: "0", paddingBottom: "0", content: [{
+            type: "Group",
+            props: { product: { id: "p9", slug: "hat" }, content: [] },
+          }]},
+        }],
+      };
+      const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const bound = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0];
+      expect((bound.props as Record<string, unknown>).requestUrl).toBe("/api/v1/public/products/hat");
     });
 
     it("maps makeOrder button to page footer", () => {
@@ -1094,6 +1118,387 @@ describe("transformWebToMobile", () => {
       expect(tap.method).toBe("updateQuantity");
       expect((tap.params as Record<string, unknown>).variantId).toEqual({ source: "item", field: "variantId" });
       expect((tap.params as Record<string, unknown>).delta).toEqual({ source: "value", value: 1 });
+    });
+  });
+
+  describe("SiteData envelope (root + zones + pages)", () => {
+    const site = {
+      root: { props: { direction: "rtl", language: "ar", primary: "#0b78c5", surface: "#f6f8fc" } },
+      zones: {
+        "root:zone-header": [{
+          type: "SiteHeader",
+          props: {
+            title: "متجري",
+            visible: true,
+            showDrawerButton: true,
+            drawerName: "site-drawer",
+            backgroundColor: "#ffffff",
+            textColor: "#0f172a",
+            rightSlot: [{ type: "CartIconButton", props: {} }],
+          },
+        }],
+        "root:zone-footer": [{
+          type: "SiteFooter",
+          props: {
+            visible: true,
+            taglineAr: "متجرك الشامل.",
+            columns: [{
+              titleAr: "التسوق",
+              links: [{ labelAr: "المنتجات", link: { kind: "page", pageId: "/products" } }],
+            }],
+          },
+        }],
+        // legacy colon-separated alias — must canonicalise to zone-drawer
+        "root:zone:drawer": [{
+          type: "ZoneDrawer",
+          props: {
+            is_active: true,
+            key: "site-drawer",
+            side: "right",
+            backgroundColor: "#fefefe",
+            slot: [{ type: "ContentHeading", props: { text: "القائمة" } }],
+          },
+        }],
+        "root:zone-popup": [{
+          type: "ZonePopup",
+          props: {
+            is_active: true,
+            key: "login",
+            slot: [{ type: "ContentHeading", props: { text: "تسجيل الدخول" } }],
+          },
+        }],
+      },
+      pages: [
+        {
+          path: "/",
+          slug: "/",
+          name: "الرئيسية",
+          content: [{
+            type: "Section",
+            props: {
+              paddingTop: "0", paddingBottom: "0",
+              content: [{
+                type: "ContentButton",
+                props: { label: "دخول", destinationType: "zone", zoneKey: "login", zoneAction: "open" },
+              }],
+            },
+          }],
+        },
+        { path: "/about", name: "من نحن", content: [] },
+      ],
+    };
+
+    const result = transformWebToMobile(JSON.stringify(site)) as Extract<TransformResult, { success: true }>;
+    const output = result.output as Record<string, unknown>;
+    const pages = output.pages as Record<string, unknown>[];
+
+    it("converts every page in SiteData.pages", () => {
+      expect(result.success).toBe(true);
+      expect(pages).toHaveLength(2);
+      expect(pages[0].route).toBe("/home");
+      expect(pages[1].route).toBe("/about");
+    });
+
+    it("reads theme from root.props", () => {
+      const colors = (output.theme as Record<string, unknown>).colors as Record<string, unknown>;
+      expect(colors.primary).toBe("#0b78c5");
+    });
+
+    it("builds appBar from SiteHeader block props", () => {
+      const appBarProps = (pages[0].appBar as Record<string, unknown>).props as Record<string, unknown>;
+      expect(appBarProps.title).toBe("متجري");
+      expect(appBarProps.backgroundColor).toBe("#ffffff");
+      expect(appBarProps.foregroundColor).toBe("#0f172a");
+      expect(appBarProps.showMenu).toBe(true);
+      expect(appBarProps.showCartIcon).toBe(true);
+    });
+
+    it("applies site-wide zones to every page", () => {
+      for (const page of pages) {
+        expect(page.appDrawer).toBeDefined();
+        expect(page.footer).toBeDefined();
+      }
+    });
+
+    it("canonicalises legacy colon zone keys into the appDrawer", () => {
+      const drawer = pages[0].appDrawer as Record<string, unknown>;
+      const drawerProps = drawer.props as Record<string, unknown>;
+      expect(drawer.type).toBe("appDrawer");
+      expect(drawerProps.drawerEdge).toBe("end"); // side: "right"
+      expect(drawerProps.backgroundColor).toBe("#fefefe");
+    });
+
+    it("builds the footer from SiteFooter block props and LinkValue links", () => {
+      const footer = pages[0].footer as Record<string, unknown>;
+      const children = ((footer.child as Record<string, unknown>).children as Record<string, unknown>[]);
+      const tagline = children[0].props as Record<string, unknown>;
+      expect(tagline.value).toBe("متجرك الشامل.");
+      const column = children[1] as Record<string, unknown>;
+      const link = (column.children as Record<string, unknown>[])[1];
+      expect((link.props as Record<string, unknown>).label).toBe("المنتجات");
+      expect((link.tap as Record<string, unknown>).route).toBe("/products");
+    });
+
+    it("inlines a ZonePopup slot into openBottomSheet when a button targets it", () => {
+      const body = pages[0].body as Record<string, unknown>[];
+      const button = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0];
+      const tap = button.tap as Record<string, unknown>;
+      expect(tap.type).toBe("openBottomSheet");
+      expect((tap.child as Record<string, unknown>).type).toBe("text");
+    });
+
+    it("lists non-tab routes in shellExcludeRoutes", () => {
+      const nav = output.navigation as Record<string, unknown>;
+      expect(nav.shellExcludeRoutes).toContain("/about");
+    });
+  });
+
+  describe("BLOCKS.md blocks added for web parity", () => {
+    const pageShell = (blocks: Record<string, unknown>[]) => ({
+      path: "/parity",
+      label: "Parity",
+      rootProps: { language: "ar", direction: "rtl", primary: "#0b78c5", surface: "#f6f8fc" },
+      blocks: [{ type: "Section", props: { paddingTop: "0", paddingBottom: "0", content: blocks } }],
+    });
+    const firstChild = (result: Extract<TransformResult, { success: true }>) => {
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      return ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0];
+    };
+
+    it("converts ContentLink title + LinkValue to a text button", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        { type: "ContentLink", props: { title: "اقرأ المزيد", link: { kind: "page", pageId: "/about" }, color: "theme-primary" } },
+      ]))) as Extract<TransformResult, { success: true }>;
+      const link = firstChild(result);
+      expect(link.type).toBe("button");
+      expect((link.props as Record<string, unknown>).label).toBe("اقرأ المزيد");
+      expect((link.props as Record<string, unknown>).variant).toBe("text");
+      expect((link.props as Record<string, unknown>).color).toBe("#0b78c5");
+      expect((link.tap as Record<string, unknown>).route).toBe("/about");
+    });
+
+    it("converts ContentInput to textFormField keyed by props.id", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        { type: "ContentInput", props: { label: "البريد", name: "email", inputType: "email", required: true } },
+      ]))) as Extract<TransformResult, { success: true }>;
+      const field = firstChild(result);
+      expect(field.type).toBe("textFormField");
+      const props = field.props as Record<string, unknown>;
+      expect(props.id).toBe("email");
+      expect(props.name).toBeUndefined();
+      expect(props.keyboardType).toBe("email");
+      expect(props.validateEmail).toBe(true);
+      expect(props.validateRequired).toBe(true);
+      expect(props.textDirection).toBe("ltr");
+    });
+
+    it("converts a static ButtonGroup to a row of buttons", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        {
+          type: "ButtonGroup",
+          props: {
+            defaultSelectedValue: "a",
+            align: "center",
+            activeStyle: { bgColor: "theme-primary", buttonSize: "theme-sm" },
+            inactiveStyle: { bgColor: "theme-surface", buttonSize: "theme-sm" },
+            items: [
+              { title: "أ", value: "a", destinationType: "link", link: { kind: "page", pageId: "/" } },
+              { title: "ب", value: "b", destinationType: "link", link: { kind: "page", pageId: "/products" } },
+            ],
+          },
+        },
+      ]))) as Extract<TransformResult, { success: true }>;
+      const group = firstChild(result);
+      expect(group.type).toBe("row");
+      const children = group.children as Record<string, unknown>[];
+      expect(children).toHaveLength(2);
+      expect((children[0].props as Record<string, unknown>).variant).toBe("filled");
+      expect((children[1].props as Record<string, unknown>).variant).toBe("outlined");
+      expect((children[0].props as Record<string, unknown>).height).toBe(36);
+      expect((children[1].tap as Record<string, unknown>).route).toBe("/products");
+    });
+
+    it("emits unsupported for a runtime-bound ButtonGroup", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        { type: "ButtonGroup", props: { bindingMode: "categories" } },
+      ]))) as Extract<TransformResult, { success: true }>;
+      expect(firstChild(result).type).toBe("unsupported");
+      expect(result.warnings?.join(" ")).toContain("bindingMode");
+    });
+
+    it("skips Chip with a warning", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        { type: "Chip", props: { listValueContext: { path: "product.tags" } } },
+      ]))) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      expect(((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])).toHaveLength(0);
+      expect(result.warnings?.join(" ")).toContain("Chip");
+    });
+
+    it("converts CartQuantity to a stepper row with updateQuantity calls", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        { type: "CartQuantity", props: { align: "center" } },
+      ]))) as Extract<TransformResult, { success: true }>;
+      const row = firstChild(result);
+      expect(row.type).toBe("row");
+      const [dec, val, inc] = row.children as Record<string, unknown>[];
+      expect((dec.tap as Record<string, unknown>).method).toBe("updateQuantity");
+      expect(((dec.tap as Record<string, unknown>).params as Record<string, Record<string, unknown>>).delta.value).toBe(-1);
+      expect((val.props as Record<string, unknown>).valuePath).toBe("item.quantity");
+      expect(((inc.tap as Record<string, unknown>).params as Record<string, Record<string, unknown>>).delta.value).toBe(1);
+    });
+
+    it("converts ProductImageCarousel inside a bound Group to a bound image", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        {
+          type: "Group",
+          props: {
+            product: { id: "p1" },
+            content: [{ type: "ProductImageCarousel", props: { aspectRatio: "square", radius: "theme-md" } }],
+          },
+        },
+      ]))) as Extract<TransformResult, { success: true }>;
+      const bound = firstChild(result);
+      const image = ((bound.child as Record<string, unknown>).children as Record<string, unknown>[])[0];
+      expect(image.type).toBe("image");
+      expect((image.props as Record<string, unknown>).urlPath).toBe("dataContext.requests.product-p1.data.primaryImageUrl");
+    });
+
+    it("emits unsupported for ProductVariants", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        { type: "ProductVariants", props: { chipStyle: "pill" } },
+      ]))) as Extract<TransformResult, { success: true }>;
+      expect(firstChild(result).type).toBe("unsupported");
+    });
+
+    it("skips CartList — it is a web preset, not a persisted block", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        { type: "CartList", props: { gap: "md", showDividerLines: true } },
+      ]))) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      expect(((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])).toHaveLength(0);
+      expect(result.warnings?.join(" ")).toContain("web preset, not a block");
+    });
+
+    it("renders the cart only once when a legacy CartSection sits beside a cart Group", () => {
+      const result = transformWebToMobile(JSON.stringify(pageShell([
+        { type: "Group", props: { cartLineId: "l1", content: [] } },
+        { type: "CartSection", props: {} },
+      ]))) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const children = (body[0].child as Record<string, unknown>).children as Record<string, unknown>[];
+      expect(children).toHaveLength(1);
+      expect(children[0].type).toBe("listView");
+    });
+
+    it("warns when an overlay zone has content but nothing opens it", () => {
+      const site = {
+        root: { props: { language: "ar", direction: "rtl" } },
+        zones: {
+          "root:zone-popup": [{
+            type: "ZonePopup",
+            props: { is_active: true, key: "promo", slot: [{ type: "ContentHeading", props: { text: "عرض" } }] },
+          }],
+        },
+        pages: [{ path: "/", name: "H", content: [] }],
+      };
+      const result = transformWebToMobile(JSON.stringify(site)) as Extract<TransformResult, { success: true }>;
+      expect(result.warnings?.join(" ")).toContain('Overlay zone "promo" is never opened');
+    });
+
+    it("ignores metadata.preset / sectionKind — presets are a web authoring concern only", () => {
+      // Strip generated ids: they are counter-based, so only structure/props are comparable.
+      const stripIds = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.map(stripIds);
+        if (value && typeof value === "object") {
+          return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>)
+              .filter(([key]) => key !== "id")
+              .map(([key, v]) => [key, stripIds(v)])
+          );
+        }
+        return value;
+      };
+      const page = (sectionProps: Record<string, unknown>) => JSON.stringify({
+        path: "/p", label: "P",
+        rootProps: { language: "ar", direction: "rtl", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: {
+            paddingTop: "0", paddingBottom: "0",
+            ...sectionProps,
+            content: [
+              { type: "ContentHeading", props: { text: "المنتجات" } },
+              {
+                type: "Group",
+                props: {
+                  product: { id: "p1", slug: "shirt" },
+                  content: [{ type: "ContentHeading", props: { text: "x", valueContext: { path: "product.title" } } }],
+                },
+              },
+            ],
+          },
+        }],
+      });
+
+      const plain = transformWebToMobile(page({})) as Extract<TransformResult, { success: true }>;
+      const preset = transformWebToMobile(page({
+        metadata: { preset: "products-grid" },
+        sectionKind: "products-grid",
+        collection: { id: "coll_featured", slug: "featured" },
+      })) as Extract<TransformResult, { success: true }>;
+
+      expect(stripIds(preset.output)).toEqual(stripIds(plain.output));
+    });
+
+    it("collapses cartLineId Groups into one cart listView regardless of section preset", () => {
+      const input = {
+        path: "/cart",
+        label: "Cart",
+        rootProps: { language: "ar", direction: "rtl", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: {
+            content: [
+              { type: "Group", props: { cartLineId: "l1", content: [{ type: "CartQuantity", props: {} }] } },
+              { type: "Group", props: { cartLineId: "l2", content: [{ type: "CartQuantity", props: {} }] } },
+            ],
+          },
+        }],
+      };
+      const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const children = (body[0].child as Record<string, unknown>).children as Record<string, unknown>[];
+      expect(children).toHaveLength(1);
+      expect(children[0].type).toBe("listView");
+      expect((children[0].itemBuilder as Record<string, unknown>).source).toBe("cart.items");
+      expect(result.warnings?.join(" ")).toContain("l2");
+    });
+
+    it("keeps shopping-cart shell blocks in authored order around the cart listView", () => {
+      const input = {
+        path: "/cart",
+        label: "Cart",
+        rootProps: { language: "ar", direction: "rtl", primary: "#000" },
+        blocks: [{
+          type: "Section",
+          props: {
+            metadata: { preset: "shopping-cart" },
+            content: [
+              { type: "ContentHeading", props: { text: "سلة التسوق" } },
+              { type: "Group", props: { cartLineId: "l1", content: [{ type: "CartQuantity", props: {} }] } },
+              { type: "ContentButton", props: { label: "إتمام", destinationType: "action", buttonAction: "makeOrder" } },
+            ],
+          },
+        }],
+      };
+      const result = transformWebToMobile(JSON.stringify(input)) as Extract<TransformResult, { success: true }>;
+      const page = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0];
+      const body = page.body as Record<string, unknown>[];
+      const children = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[]);
+      expect(children[0].type).toBe("text");
+      expect(children[1].type).toBe("listView");
+      expect(page.footer).toBeDefined();
     });
   });
 });
