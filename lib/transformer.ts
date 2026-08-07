@@ -20,7 +20,7 @@ function takeWarnings(): string[] {
   return w;
 }
 
-/** Maps BLOCKS.md Puck type names to internal converter type names. */
+/** Maps BLOCKS-MOBILE.md Puck type names to internal converter type names. */
 const WEB_TYPE_ALIASES: Record<string, string> = {
   ContentImage: "Image",
   ContentParagraph: "Text",
@@ -31,6 +31,7 @@ const WEB_TYPE_ALIASES: Record<string, string> = {
   ContentHtml: "Html",
   ContentLink: "Link",
   ContentInput: "Input",
+  ContentSwitch: "Switch",
   VideoEmbed: "YouTube",
   ProductsGrid: "ProductGrid",
   OrderHistory: "OrderList",
@@ -68,6 +69,60 @@ let _zoneSlots: Map<string, Record<string, unknown>[]> = new Map();
 let _zoneSlotsUsed: Set<string> = new Set();
 /** Zone keys that resolve to the page-level appDrawer (ZoneDrawer / SiteDrawerShell / SiteHeader.drawerName). */
 let _drawerZoneKeys: Set<string> = new Set();
+
+/**
+ * The auth form currently being converted. Set by transformSection when a Section holds both
+ * ContentInput fields and a ContentButton whose `buttonAction` is an auth action — the Section's
+ * content is then wrapped in a `form` node and the button submits it (see resolveAuthFormTap).
+ * Without this, a `login` button is only a navigate stub to the engine's native /auth/login screen.
+ */
+type AuthForm = { formId: string; fields: string[] };
+let _activeAuthForm: AuthForm | null = null;
+
+/** Auth `buttonAction`s that submit the surrounding form rather than navigating. */
+const AUTH_FORM_ACTIONS = new Set(["login"]);
+
+/** Field ids that are never sent as auth params (confirmations, UI-only toggles). */
+const AUTH_PARAM_EXCLUDED_FIELDS = new Set(["passwordConfirm", "confirmPassword", "rememberMe"]);
+
+/**
+ * Collects the ContentInput field ids in a block subtree, stopping at nested Sections
+ * (each Section owns its own form scope).
+ */
+function collectFormFieldIds(blocks: Record<string, unknown>[], acc: string[] = []): string[] {
+  for (const block of blocks) {
+    const type = normalizeBlockType((block.type as string) || "");
+    if (type === "Section") continue;
+    const props = (block.props || {}) as Record<string, unknown>;
+    if (type === "Input") {
+      const id = (props.name as string) || (props.id as string) || "field";
+      if (!acc.includes(id)) acc.push(id);
+      continue;
+    }
+    if (type === "Switch") {
+      const id = (props.name as string) || (props.id as string) || "switch";
+      if (!acc.includes(id)) acc.push(id);
+      continue;
+    }
+    collectFormFieldIds(getChildren(block), acc);
+  }
+  return acc;
+}
+
+/** The auth `buttonAction` submitted by this block subtree, if any. */
+function findAuthFormAction(blocks: Record<string, unknown>[]): string | null {
+  for (const block of blocks) {
+    const type = normalizeBlockType((block.type as string) || "");
+    if (type === "Section") continue;
+    const props = (block.props || {}) as Record<string, unknown>;
+    if (type === "Button" && AUTH_FORM_ACTIONS.has((props.buttonAction as string) || "")) {
+      return props.buttonAction as string;
+    }
+    const nested = findAuthFormAction(getChildren(block));
+    if (nested) return nested;
+  }
+  return null;
+}
 
 /** Web `valueContext.path` → the mobile field name, appended to the active binding base. */
 const VALUE_CONTEXT_MAP: Record<string, { valueField?: string; urlField?: string }> = {
@@ -292,6 +347,16 @@ function resolveGridGap(gap: string | number | undefined): number {
   return parsePx(gap, 16);
 }
 
+/** `CollectionPickerRef` → the segment the collection endpoint is keyed by (`id`, else `slug`). */
+function resolveCollectionRef(collection: unknown): string {
+  if (typeof collection === "string") return collection;
+  if (collection && typeof collection === "object") {
+    const ref = collection as Record<string, unknown>;
+    return String(ref.id || ref.slug || "all");
+  }
+  return "all";
+}
+
 function buildCollectionRequestUrl(collection: string | Record<string, unknown>, maxSize: number): string {
   const size = Math.min(maxSize, 20);
   const collectionId =
@@ -466,7 +531,11 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
 
   switch (action) {
     case "login":
-      return { type: "navigate", route: "/auth/login", navigation_type: "push" };
+      // A `login` button inside a Section that also holds input fields is a real login form:
+      // submit it. On its own it is only an entry point to the engine's native auth screen.
+      return _activeAuthForm
+        ? buildAuthFormTap("login", _activeAuthForm, onRedirect)
+        : { type: "navigate", route: "/auth/login", navigation_type: "push" };
     case "logout":
       return {
         type: "cubitCall", cubit: "auth", method: "logout",
@@ -507,6 +576,31 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
     default:
       return undefined;
   }
+}
+
+/**
+ * `cubitCall auth.<method>` that submits an auth form: every collected field is passed as a
+ * `source: "form"` param, and the engine gates the call on form validity via `requireValidForm`.
+ */
+function buildAuthFormTap(
+  method: string,
+  form: AuthForm,
+  onRedirect: Record<string, unknown> | undefined
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const field of form.fields) {
+    if (AUTH_PARAM_EXCLUDED_FIELDS.has(field)) continue;
+    params[field] = { source: "form", field };
+  }
+  return {
+    type: "cubitCall",
+    cubit: "auth",
+    method,
+    requireValidForm: true,
+    formId: form.formId,
+    ...(Object.keys(params).length > 0 ? { params } : {}),
+    ...(onRedirect ? { onSuccess: onRedirect } : {}),
+  };
 }
 
 function resolveLayoutTap(props: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -779,7 +873,8 @@ function transformInput(block: Record<string, unknown>, rootProps: Record<string
   const dir = (rootProps.direction as string) || "rtl";
   const fieldId = (props.name as string) || (props.id as string) || "field";
   const inputType = (props.inputType as string) || "text";
-  const isLtrField = inputType === "email" || inputType === "tel";
+  // Credentials and contact identifiers are always Latin-keyed, even in an RTL app.
+  const isLtrField = inputType === "email" || inputType === "tel" || inputType === "password";
 
   const outProps: Record<string, unknown> = {
     id: fieldId,
@@ -803,6 +898,34 @@ function transformInput(block: Record<string, unknown>, rootProps: Record<string
   }
 
   const node: Record<string, unknown> = { id: generateId("input"), type: "textFormField", props: outProps };
+  return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
+}
+
+function transformSwitch(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const fieldId = (props.name as string) || (props.id as string) || "switch";
+
+  const outProps: Record<string, unknown> = {
+    id: fieldId,
+    label: (props.label as string) || "",
+    activeColor: (rootProps.primary as string) || "#1D4ED8",
+  };
+
+  // `switchField` stores "true" / "false" strings in FormStateStore.
+  if (props.defaultChecked === true) outProps.value = "true";
+
+  const switchAction = (props.switchAction as string) || "";
+  if (switchAction) {
+    addWarning(
+      `ContentSwitch "${fieldId}" uses switchAction "${switchAction}"; the mobile field is emitted as a plain switchField without store wiring — connect it manually`
+    );
+  }
+  // `helperText` and `labelPosition` have no engine equivalent on switchField.
+  if (props.helperText) {
+    addWarning(`ContentSwitch "${fieldId}" helperText dropped; the engine switchField has no helper-text prop`);
+  }
+
+  const node: Record<string, unknown> = { id: generateId("switch"), type: "switchField", props: outProps };
   return applyLayout(node, props.layout as Record<string, unknown> | undefined, rootProps);
 }
 
@@ -1338,11 +1461,12 @@ function transformSection(block: Record<string, unknown>, rootProps: Record<stri
   const props = (block.props || {}) as Record<string, unknown>;
   if (props.visible === false) return null;
 
-  // Section presets (`metadata.preset`, legacy `sectionKind`) are a web authoring
-  // convenience only — by the time JSON reaches the converter the preset has already
-  // been expanded into ordinary blocks. Every Section converts the same way; the
-  // commerce behaviour lives on the blocks themselves (bound Group, cartLineId Group,
-  // makeOrder ContentButton).
+  // Section presets (`metadata.preset`, legacy `sectionKind`) are mostly a web authoring
+  // convenience: once the preset has been expanded into ordinary blocks, every Section
+  // converts the same way and the commerce behaviour lives on the blocks themselves
+  // (bound Group, cartLineId Group, makeOrder ContentButton). The one exception is a
+  // products-grid / products-page Section still holding its unexpanded card template —
+  // see transformProductsTemplateSection.
   const children = getChildren(block);
 
   for (const child of children) {
@@ -1359,10 +1483,31 @@ function transformSection(block: Record<string, unknown>, rootProps: Record<stri
   const columnsMobile = parseInt(String(props.columnsMobile || props.columns || 1), 10);
   const gridGap = parsePx(props.gridGap as string, 16);
 
-  const transformedChildren = children.map((c: Record<string, unknown>) => transformBlock(c, rootProps)).filter(Boolean) as Record<string, unknown>[];
+  // An auth Section (input fields + a login button) becomes a real `form` node so the submit
+  // button can gate on validity and read its params out of FormStateStore.
+  const authAction = findAuthFormAction(children);
+  const authFields = authAction ? collectFormFieldIds(children) : [];
+  const authForm: AuthForm | null =
+    authAction && authFields.length > 0
+      ? { formId: `${authAction}-form`, fields: authFields }
+      : null;
+
+  const templateGrid = transformProductsTemplateSection(block, rootProps);
+  const prevAuthForm = _activeAuthForm;
+  if (authForm) _activeAuthForm = authForm;
+  let transformedChildren: Record<string, unknown>[];
+  try {
+    transformedChildren = templateGrid
+      ? []
+      : (children.map((c: Record<string, unknown>) => transformBlock(c, rootProps)).filter(Boolean) as Record<string, unknown>[]);
+  } finally {
+    _activeAuthForm = prevAuthForm;
+  }
 
   let contentWrapper: Record<string, unknown>;
-  if (columnsMobile > 1) {
+  if (templateGrid) {
+    contentWrapper = templateGrid;
+  } else if (columnsMobile > 1) {
     contentWrapper = {
       id: generateId("section-grid"),
       type: "gridView",
@@ -1380,6 +1525,15 @@ function transformSection(block: Record<string, unknown>, rootProps: Record<stri
       type: "column",
       props: flexProps("start", "stretch", { gap: 16 }),
       children: transformedChildren,
+    };
+  }
+
+  if (authForm) {
+    contentWrapper = {
+      id: generateId("form"),
+      type: "form",
+      props: { formId: authForm.formId, id: authForm.formId },
+      child: contentWrapper,
     };
   }
 
@@ -1838,6 +1992,83 @@ function transformProductGrid(block: Record<string, unknown>, rootProps: Record<
       type: "repeat",
       source: `dataContext.requests.${requestKey}.data`,
       item: buildProductGridItemTemplate(cardVariant),
+    },
+  };
+}
+
+/** `metadata.preset`, falling back to the legacy `sectionKind` field. */
+function readSectionPreset(props: Record<string, unknown>): string {
+  const metadata = props.metadata as Record<string, unknown> | undefined;
+  const fromMetadata = typeof metadata?.preset === "string" ? metadata.preset : "";
+  return fromMetadata || (typeof props.sectionKind === "string" ? props.sectionKind : "");
+}
+
+/**
+ * A products-grid / products-page Section that still holds its **unexpanded** card
+ * template: `content` is exactly one `Group` with `product: null` whose children bind
+ * through `valueContext`, and the web repeater clones it once per product at render
+ * time (BLOCKS.md § "Section presets: the one-template-card contract").
+ *
+ * Mobile has the same primitive, so the template maps straight onto a `gridView` whose
+ * `itemBuilder` repeats it over the collection request, with children bound to `item.*`.
+ *
+ * Returns `null` for anything that does not match the contract — a preset Section whose
+ * content is already expanded into ordinary blocks converts as a plain Section (§9.6).
+ */
+function transformProductsTemplateSection(
+  block: Record<string, unknown>,
+  rootProps: Record<string, unknown>
+): Record<string, unknown> | null {
+  const props = (block.props || {}) as Record<string, unknown>;
+  const preset = readSectionPreset(props);
+  if (preset !== "products-grid" && preset !== "products-page") return null;
+
+  // `cardTemplate` mirrors `content[0]`; it is the only copy left if content was cleared.
+  const children = getChildren(block);
+  const cardTemplate = Array.isArray(props.cardTemplate) ? (props.cardTemplate as Record<string, unknown>[]) : [];
+  const source = children.length > 0 ? children : cardTemplate;
+  if (source.length !== 1) return null;
+
+  const template = source[0];
+  const templateProps = (template?.props || {}) as Record<string, unknown>;
+  if (template?.type !== "Group" || templateProps.product) return null;
+
+  const columns = parseInt(String(props.columnsMobile || props.columns || 2), 10) || 2;
+  const gap = resolveGridGap(props.gridGap as string | number);
+  const requestKey = "product-list";
+  // products-page has no collection picker — its grid is the whole catalogue, filtered
+  // at runtime by the search / category controls that sit in the wrapper Section.
+  const requestUrl = buildCollectionRequestUrl(
+    preset === "products-grid" ? resolveCollectionRef(props.collection) : "all",
+    20
+  );
+
+  const item = withBindingScope({ kind: "product", base: "item" }, () =>
+    transformBlock(template, rootProps)
+  );
+  if (!item) {
+    addWarning(`Section preset "${preset}" has an empty card template; the grid was dropped`);
+    return null;
+  }
+
+  return {
+    id: generateId("products-grid"),
+    type: "gridView",
+    props: {
+      crossAxisCount: columns,
+      mainAxisSpacing: gap,
+      crossAxisSpacing: gap,
+      childAspectRatio: 0.75,
+      enableInnerScroll: false,
+      requestKey,
+      requestUrl,
+      emptyMessage: "لا توجد منتجات",
+      errorMessage: "حدث خطأ",
+    },
+    itemBuilder: {
+      type: "repeat",
+      source: `dataContext.requests.${requestKey}.data`,
+      item,
     },
   };
 }
@@ -3024,6 +3255,7 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
     case "Chip": return transformChip(block, rootProps);
     case "Link": return transformLink(block, rootProps);
     case "Input": return transformInput(block, rootProps);
+    case "Switch": return transformSwitch(block, rootProps);
     case "Icon": return transformIcon(block, rootProps);
     case "Image": return transformImage(block, rootProps);
     case "Video": return transformVideo(block, rootProps);
@@ -3283,6 +3515,7 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
   _zoneSlotsUsed = new Set();
   _drawerZoneKeys = new Set();
   _cartTemplateEmitted = false;
+  _activeAuthForm = null;
 
   // Separate zone / shell blocks from body blocks
   const bodyBlocks: Record<string, unknown>[] = [];
@@ -3710,8 +3943,274 @@ export function transformWebToMobile(input: string): TransformResult {
 
 const PK = (o: Record<string, unknown>) => JSON.stringify(o, null, 2);
 
-export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
+export type ExamplePreset = {
+  label: string;
+  json: string;
+  /**
+   * Legacy presets are authored from web block types that are **not** in the mobile block set
+   * (docs/BLOCKS-MOBILE.md) — `Text`, `Heading`, `Button`, `Hero`, `Card`, `Badge`, `Space`,
+   * `ProductGrid`, `TestimonialGrid`, `Countdown`, … They still convert, so they are kept as
+   * regression fixtures for old `store_config.json` payloads, but they must not be used as a
+   * template for new work. The converter UI shows them disabled behind a "Show legacy" toggle.
+   */
+  legacy?: boolean;
+  /** Why this preset is legacy — shown in the UI. */
+  legacyReason?: string;
+};
+
+export const EXAMPLE_PRESETS: ExamplePreset[] = [
   {
+    // ── Canonical example ──────────────────────────────────────────────────────
+    // Three pages, authored strictly from the mobile block set in docs/BLOCKS-MOBILE.md:
+    //   /          static content only  — ContentHeading, ContentParagraph, ContentImage,
+    //                                     ImageGallery, ContentIcon, ContentDivider,
+    //                                     Accordion, Testimonials, VideoEmbed, Group, Flex
+    //   /login     a real form          — ContentInput + ContentSwitch + ContentButton(login)
+    //   /products  products-grid preset — one unexpanded card-template Group (§9.7)
+    // No SiteHeader / SiteFooter / ZonePopup / Space / RowGroup: none are in the mobile set.
+    label: "Mobile Site JSON · 3 pages (home · login · products)",
+    json: PK({
+      root: {
+        props: {
+          title: "متجري", direction: "rtl", language: "ar",
+          primary: "#0b78c5", surface: "#f6f8fc", text: "#14243f", neutral: "#6b7d93",
+          success: "#0f9d73", warning: "#c77a15", error: "#c24133",
+          bodyFont: "cairo", radiusSm: "8px", radiusMd: "12px", radiusLg: "18px",
+          breakpointMobileMax: 767, breakpointTabletMax: 1023,
+        },
+      },
+      zones: {
+        // ZoneDrawer is one of the two site zones in the mobile block set. Its slot content
+        // becomes the page-level `appDrawer`; the appBar gets showMenu + openDrawer from it.
+        "root:zone-drawer": [{
+          type: "ZoneDrawer",
+          props: {
+            is_active: true, is_mobile_only: true, zoneKey: "site-drawer", side: "left",
+            backgroundColor: "#ffffff", overlay: true, showCloseButton: true,
+            slot: [
+              { type: "ContentHeading", props: { text: "القائمة", level: "3", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-semibold", color: "theme-text" } },
+              { type: "ContentLink", props: { title: "الرئيسية", link: { kind: "page", pageId: "/" }, align: "right", color: "theme-text", fontSize: "theme-md" } },
+              { type: "ContentLink", props: { title: "المنتجات", link: { kind: "page", pageId: "/products" }, align: "right", color: "theme-text", fontSize: "theme-md" } },
+              { type: "ContentLink", props: { title: "تسجيل الدخول", link: { kind: "page", pageId: "/login" }, align: "right", color: "theme-primary", fontSize: "theme-md" } },
+            ],
+          },
+        }],
+      },
+      pages: [
+        // ── 1. Home — static blocks only, no data binding, no actions ──────────
+        {
+          path: "/", slug: "/", name: "الرئيسية", link: "/", title: "الرئيسية",
+          description: "الصفحة الرئيسية للمتجر", iconName: "home",
+          content: [
+            {
+              type: "Section",
+              props: {
+                name: "الترحيب", anchorId: "", visible: true,
+                paddingTop: "40px", paddingBottom: "32px", paddingHorizontal: "16px",
+                backgroundColor: "#f6f8fc", theme: "dark", maxWidth: "1280px",
+                columns: 1, columnsMobile: 1, gridGap: "16px",
+                content: [
+                  { type: "ContentHeading", props: { text: "أهلاً بك في متجري", level: "1", textAlign: "center", fontFamily: "body", fontSize: "theme-2xl", fontWeight: "theme-bold", lineHeight: "theme-tight", color: "theme-text" } },
+                  { type: "ContentParagraph", props: { text: "تشكيلة مختارة بعناية، وتوصيل خلال ٢-٤ أيام عمل لكل المحافظات.", textAlign: "center", fontFamily: "body", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-normal", color: "theme-neutral" } },
+                  { type: "ContentImage", props: { src: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80", alt: "صورة البانر الرئيسي", align: "center", objectFit: "cover", radius: "theme-lg", maxWidth: "100%" } },
+                  { type: "ContentButton", props: { label: "تصفّح المنتجات", align: "center", destinationType: "link", link: { kind: "page", pageId: "/products" }, buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+                ],
+              },
+            },
+            {
+              // Flex row of icon+text pairs — the mobile-set way to build a features strip
+              // (the legacy `Card` / `Stats` blocks are not in the mobile registry).
+              type: "Section",
+              props: {
+                name: "المزايا", visible: true,
+                paddingTop: "32px", paddingBottom: "32px", paddingHorizontal: "16px",
+                backgroundColor: "#ffffff", columns: 1, columnsMobile: 1, gridGap: "16px",
+                content: [
+                  { type: "ContentHeading", props: { text: "لماذا نحن؟", level: "2", textAlign: "right", fontSize: "theme-xl", fontWeight: "theme-bold", color: "theme-text" } },
+                  {
+                    type: "Flex",
+                    props: {
+                      direction: "row", justifyContent: "center", gap: 16, wrap: "nowrap",
+                      items: [
+                        {
+                          type: "Group",
+                          props: {
+                            direction: "column", gap: 8, alignItems: "center", justifyContent: "flex-start", wrap: "nowrap",
+                            backgroundColor: "theme-surface", padding: "16px", borderRadius: "theme-md", boxShadow: "sm",
+                            content: [
+                              { type: "ContentIcon", props: { icon: "truck", size: 32, colorMode: "theme", colorTheme: "primary" } },
+                              { type: "ContentHeading", props: { text: "توصيل سريع", level: "3", textAlign: "center", fontSize: "theme-md", fontWeight: "theme-semibold", color: "theme-text" } },
+                              { type: "ContentParagraph", props: { text: "٢-٤ أيام عمل", textAlign: "center", fontSize: "theme-sm", color: "theme-neutral" } },
+                            ],
+                          },
+                        },
+                        {
+                          type: "Group",
+                          props: {
+                            direction: "column", gap: 8, alignItems: "center", justifyContent: "flex-start", wrap: "nowrap",
+                            backgroundColor: "theme-surface", padding: "16px", borderRadius: "theme-md", boxShadow: "sm",
+                            content: [
+                              { type: "ContentIcon", props: { icon: "shield-check", size: 32, colorMode: "theme", colorTheme: "success" } },
+                              { type: "ContentHeading", props: { text: "دفع آمن", level: "3", textAlign: "center", fontSize: "theme-md", fontWeight: "theme-semibold", color: "theme-text" } },
+                              { type: "ContentParagraph", props: { text: "الدفع عند الاستلام متاح", textAlign: "center", fontSize: "theme-sm", color: "theme-neutral" } },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
+                  { type: "ContentDivider", props: { thickness: "1px", colorMode: "theme", colorTheme: "neutral" } },
+                ],
+              },
+            },
+            {
+              type: "Section",
+              props: {
+                name: "المعرض", visible: true,
+                paddingTop: "32px", paddingBottom: "32px", paddingHorizontal: "16px",
+                backgroundColor: "#ffffff", columns: 1, columnsMobile: 1, gridGap: "16px",
+                content: [
+                  { type: "ContentHeading", props: { text: "من المتجر", level: "2", textAlign: "right", fontSize: "theme-xl", fontWeight: "theme-bold", color: "theme-text" } },
+                  {
+                    type: "ImageGallery",
+                    props: {
+                      mode: "slider", aspectRatio: "landscape", objectFit: "cover",
+                      radius: "theme-md", gap: "theme-16", slidesPerView: 1,
+                      autoplay: true, autoplayDuration: "theme-5", showArrows: true,
+                      images: [
+                        { src: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1000&q=80", alt: "ساعة" },
+                        { src: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=1000&q=80", alt: "كاميرا" },
+                      ],
+                    },
+                  },
+                  { type: "ContentHeading", props: { text: "شاهد الفيديو التعريفي", level: "3", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-semibold", color: "theme-text" } },
+                  { type: "VideoEmbed", props: { src: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", align: "center", size: "theme-315", radius: "theme-lg" } },
+                ],
+              },
+            },
+            {
+              type: "Section",
+              props: {
+                name: "آراء العملاء والأسئلة", visible: true,
+                paddingTop: "32px", paddingBottom: "40px", paddingHorizontal: "16px",
+                backgroundColor: "#f6f8fc", columns: 1, columnsMobile: 1, gridGap: "16px",
+                content: [
+                  {
+                    type: "Testimonials",
+                    props: {
+                      source: "inline", layoutVariant: "carousel", columns: 2, language: "ar",
+                      showRating: true, showAvatars: false, itemCount: 2,
+                      inlineItems: [
+                        { id: "t1", name: { ar: "أحمد علي", en: "Ahmed Ali" }, role: { ar: "عميل", en: "Customer" }, avatar: "", rating: 5, text: { ar: "منتجات رائعة وتوصيل سريع.", en: "Great products, fast delivery." } },
+                        { id: "t2", name: { ar: "سارة حسن", en: "Sara Hasan" }, role: { ar: "عميلة", en: "Customer" }, avatar: "", rating: 4, text: { ar: "خدمة عملاء ممتازة.", en: "Excellent support." } },
+                      ],
+                    },
+                  },
+                  {
+                    type: "Accordion",
+                    props: {
+                      heading: "الأسئلة الشائعة",
+                      description: "إجابات مختصرة وعملية.",
+                      variant: "soft", backgroundColor: "", textColor: "",
+                      items: [
+                        { title: "كم يستغرق التوصيل؟", body: "معظم الطلبات تصل خلال ٢-٤ أيام عمل حسب المدينة.", open: true },
+                        { title: "هل يمكن الدفع عند الاستلام؟", body: "نعم، الدفع عند الاستلام متاح لجميع المناطق المؤهلة.", open: false },
+                        { title: "هل تقدّمون إرجاعاً للمنتجات؟", body: "يمكنك طلب الإرجاع خلال ٧ أيام للمنتجات غير المستخدمة.", open: false },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+
+        // ── 2. Login — form fields + a login-action button ─────────────────────
+        // The Section holds ContentInput fields *and* a ContentButton with
+        // buttonAction "login", so the converter wraps its content in a `form` node and the
+        // button submits it via cubitCall auth.login (requireValidForm + formId + form params).
+        // `scroll: "none"` keeps the auth screen from scrolling (§7 page rules).
+        {
+          path: "/login", slug: "/login", name: "تسجيل الدخول", link: "/login",
+          title: "تسجيل الدخول", description: "الدخول إلى حسابك", iconName: "user",
+          isCustom: true, scroll: "none",
+          content: [{
+            type: "Section",
+            props: {
+              name: "نموذج الدخول", visible: true,
+              paddingTop: "48px", paddingBottom: "48px", paddingHorizontal: "24px",
+              backgroundColor: "#ffffff", maxWidth: "480px",
+              columns: 1, columnsMobile: 1, gridGap: "16px",
+              content: [
+                { type: "ContentHeading", props: { text: "تسجيل الدخول", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-text" } },
+                { type: "ContentParagraph", props: { text: "أدخل رقم هاتفك وكلمة المرور للمتابعة.", textAlign: "center", fontSize: "theme-sm", fontWeight: "theme-light", color: "theme-neutral" } },
+                { type: "ContentInput", props: { label: "رقم الهاتف", name: "phone", inputType: "tel", placeholder: "09xxxxxxxx", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentInput", props: { label: "كلمة المرور", name: "password", inputType: "password", placeholder: "••••••••", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentSwitch", props: { label: "تذكّرني", name: "rememberMe", helperText: "", defaultChecked: false, labelPosition: "start", switchAction: "" } },
+                { type: "ContentButton", props: { label: "دخول", align: "center", destinationType: "action", buttonAction: "login", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+                { type: "ContentDivider", props: { thickness: "1px", colorMode: "theme", colorTheme: "neutral" } },
+                { type: "ContentLink", props: { title: "العودة إلى الرئيسية", link: { kind: "page", pageId: "/" }, align: "center", color: "theme-primary", hoverEffect: "underline", fontSize: "theme-sm", icon: "none" } },
+              ],
+            },
+          }],
+        },
+
+        // ── 3. Products — the products-grid section preset ─────────────────────
+        // The preset Section is NOT expanded on the web side: `content` holds exactly one
+        // card-template Group with `product: null`, and the repeater clones it per product.
+        // The converter maps that onto gridView + itemBuilder.repeat over the collection
+        // request (§9.7); children `valueContext` paths become item.* paths (§9.5).
+        {
+          path: "/products", slug: "/products", name: "المنتجات", link: "/products",
+          title: "كل المنتجات", description: "تصفّح كل منتجات المتجر", iconName: "package",
+          isCustom: true,
+          content: [
+            {
+              type: "Section",
+              props: {
+                name: "مقدمة", visible: true,
+                paddingTop: "32px", paddingBottom: "0px", paddingHorizontal: "16px",
+                backgroundColor: "#ffffff", columns: 1, columnsMobile: 1, gridGap: "16px",
+                content: [
+                  { type: "ContentHeading", props: { text: "المنتجات المميزة", level: "2", textAlign: "right", fontSize: "theme-xl", fontWeight: "theme-bold", color: "theme-text" } },
+                  { type: "ContentParagraph", props: { text: "اضغط على أي منتج لعرض تفاصيله.", textAlign: "right", fontSize: "theme-sm", fontWeight: "theme-light", color: "theme-neutral" } },
+                ],
+              },
+            },
+            {
+              type: "Section",
+              props: {
+                name: "Featured", visible: true,
+                paddingTop: "16px", paddingBottom: "40px", paddingHorizontal: "16px",
+                backgroundColor: "#ffffff", maxWidth: "1280px",
+                columns: 3, columnsMobile: 2, gridGap: "16px",
+                metadata: { preset: "products-grid" },
+                collection: { id: "coll_featured", name: "Featured", slug: "featured", productCount: 24 },
+                content: [{
+                  type: "Group",
+                  props: {
+                    product: null, metadata: null,
+                    direction: "column", gap: 10, alignItems: "stretch", justifyContent: "flex-start", wrap: "nowrap",
+                    backgroundColor: "theme-surface", padding: "12px", borderRadius: "theme-md", boxShadow: "sm",
+                    language: "ar",
+                    content: [
+                      { type: "ContentImage", props: { src: "https://placehold.co/400x400", valueContext: { path: "images[0].url" }, alt: "صورة المنتج", altValueContext: { path: "product.title" }, align: "center", objectFit: "cover", radius: "theme-md", maxWidth: "100%" } },
+                      { type: "ContentHeading", props: { text: "اسم المنتج", valueContext: { path: "product.title" }, level: "3", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-semibold", color: "theme-text" } },
+                      { type: "ContentParagraph", props: { text: "٠ ل.س", valueContext: { path: "pricing.displayPrice" }, textAlign: "right", fontSize: "theme-sm", fontWeight: "theme-semibold", color: "theme-primary" } },
+                      { type: "ContentButton", props: { label: "إضافة إلى السلة", align: "center", destinationType: "action", buttonAction: "addToCart", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "sm" } },
+                    ],
+                  },
+                }],
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  },
+  {
+    legacy: true,
+    legacyReason: "Uses SiteHeader / SiteFooter / ZonePopup / CartIconButton — none are in the mobile block set (docs/BLOCKS-MOBILE.md).",
     label: "Site JSON (root + zones + pages)",
     json: PK({
       root: {
@@ -3781,6 +4280,272 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "SiteHeader / SiteFooter zones plus a shopping-cart preset; neither block is in the mobile block set.",
+    label: "Site JSON · multi-page (home · products · detail · cart)",
+    json: PK({
+      root: {
+        props: {
+          title: "متجري", direction: "rtl", language: "ar",
+          primary: "#0b78c5", surface: "#f6f8fc", text: "#14243f", neutral: "#6b7d93",
+          bodyFont: "cairo", radiusMd: "12px",
+        },
+      },
+      zones: {
+        "root:zone-header": [{
+          type: "SiteHeader",
+          props: {
+            title: "متجري", variant: "commerce", language: "ar", visible: true, brandHref: "/",
+            backgroundColor: "#ffffff", textColor: "#0f172a",
+            links: [
+              { label: "Home", labelAr: "الرئيسية", link: { kind: "page", pageId: "/" } },
+              { label: "Products", labelAr: "المنتجات", link: { kind: "page", pageId: "/products" } },
+              { label: "Cart", labelAr: "السلة", link: { kind: "page", pageId: "/cart" } },
+            ],
+            rightSlot: [{ type: "CartIconButton", props: { href: "/cart" } }],
+          },
+        }],
+        "root:zone-footer": [{
+          type: "SiteFooter",
+          props: {
+            visible: true, taglineAr: "توصيل سريع لكل المحافظات.",
+            showBottomBar: true, bottomBarTextAr: "© ٢٠٢٦ متجري",
+            columns: [{
+              title: "Shop", titleAr: "التسوق",
+              links: [
+                { label: "Products", labelAr: "المنتجات", link: { kind: "page", pageId: "/products" } },
+                { label: "Cart", labelAr: "السلة", link: { kind: "page", pageId: "/cart" } },
+              ],
+            }],
+          },
+        }],
+      },
+      pages: [
+        {
+          path: "/", slug: "/", name: "الرئيسية", link: "/", title: "الرئيسية",
+          description: "الصفحة الرئيسية للمتجر", iconName: "Home",
+          content: [{
+            type: "Section",
+            props: {
+              name: "Hero", paddingTop: "56px", paddingBottom: "56px", paddingHorizontal: "24px",
+              backgroundColor: "#f6f8fc", maxWidth: "1280px", columns: 1, columnsMobile: 1,
+              content: [
+                { type: "ContentHeading", props: { text: "أهلاً بك في متجري", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-text" } },
+                { type: "ContentParagraph", props: { text: "تشكيلة مختارة بعناية، وتوصيل خلال ٢-٤ أيام عمل.", textAlign: "center", fontSize: "theme-md", color: "theme-neutral" } },
+                { type: "ContentButton", props: { label: "تصفّح المنتجات", align: "center", destinationType: "link", link: { kind: "page", pageId: "/products" }, buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+              ],
+            },
+          }],
+        },
+        {
+          path: "/products", slug: "/products", name: "المنتجات", link: "/products",
+          title: "كل المنتجات", iconName: "Package", isCustom: true,
+          content: [{
+            type: "Section",
+            props: {
+              name: "قائمة المنتجات", paddingTop: "40px", paddingBottom: "40px", paddingHorizontal: "24px",
+              columns: 1, columnsMobile: 1,
+              content: [
+                { type: "ContentHeading", props: { text: "كل المنتجات", level: "2", textAlign: "right", fontSize: "theme-xl", color: "theme-text" } },
+                { type: "ContentParagraph", props: { text: "اختر منتجاً لعرض تفاصيله.", textAlign: "right", fontSize: "theme-sm", color: "theme-neutral" } },
+                { type: "ContentButton", props: { label: "عرض منتج تجريبي", align: "right", destinationType: "link", link: { kind: "page", pageId: "/products/:product-slug", dynamicSegment: { param: "product-slug", valueContext: "product.slug" } }, buttonVariantMode: "variant", buttonVariant: "secondary" } },
+              ],
+            },
+          }],
+        },
+        {
+          // Dynamic route: the engine fills `:product-slug` from the repeat item / route params.
+          path: "/products/:product-slug", slug: "/products/example-product", name: "تفاصيل المنتج",
+          link: "/products/example-product", title: "تفاصيل المنتج",
+          dynamic: true, examplePath: "/products/example-product", iconName: "Package",
+          content: [{
+            type: "Section",
+            props: {
+              name: "تفاصيل المنتج", paddingTop: "32px", paddingBottom: "32px", paddingHorizontal: "24px",
+              columns: 1, columnsMobile: 1,
+              content: [{
+                type: "Group",
+                props: {
+                  direction: "column", gap: 16, alignItems: "stretch",
+                  product: { id: "prod-001", titleAr: "قميص كلاسيكي", titleEn: "Classic Shirt", slug: "classic-shirt" },
+                  metadata: { type: "product", method: "get", id: "prod-001", apiUrl: "https://api.example.com/public/products/classic-shirt?include=PRICING&include=IMAGES" },
+                  language: "ar",
+                  content: [
+                    { type: "ContentImage", props: { src: "https://placehold.co/600x600", valueContext: { path: "images[0].url" }, alt: "صورة المنتج", radius: "theme-lg" } },
+                    { type: "ContentHeading", props: { text: "قميص كلاسيكي", valueContext: { path: "product.title" }, level: "1", textAlign: "right", fontSize: "theme-xl" } },
+                    { type: "ContentParagraph", props: { text: "٠ ل.س", valueContext: { path: "pricing.displayPrice" }, textAlign: "right", fontSize: "theme-lg", color: "theme-primary" } },
+                    { type: "ContentButton", props: { label: "إضافة إلى السلة", align: "center", destinationType: "action", buttonAction: "addToCart", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+                  ],
+                },
+              }],
+            },
+          }],
+        },
+        {
+          path: "/cart", slug: "/cart", name: "السلة", link: "/cart", title: "سلة التسوق", iconName: "ShoppingCart",
+          content: [{
+            type: "Section",
+            props: {
+              name: "سلة التسوق", paddingTop: "32px", paddingBottom: "32px", paddingHorizontal: "24px",
+              maxWidth: "900px", columns: 1,
+              metadata: { preset: "shopping-cart" },
+              content: [
+                { type: "ContentHeading", props: { text: "سلة التسوق", level: "2", textAlign: "right", fontSize: "theme-2xl" } },
+                {
+                  type: "Group",
+                  props: {
+                    cartLineId: "prod-001:{\"Color\":\"Red\"}", direction: "row", gap: 12,
+                    alignItems: "center", language: "ar",
+                    content: [
+                      { type: "ContentImage", props: { src: "https://placehold.co/144x144", valueContext: { path: "images[0].url" }, maxWidth: "72px", radius: "theme-md" } },
+                      { type: "ContentHeading", props: { text: "اسم المنتج", valueContext: { path: "product.title" }, level: "3", fontSize: "theme-md" } },
+                      { type: "ContentParagraph", props: { text: "٠ ل.س", valueContext: { path: "pricing.displayLineTotal" }, fontSize: "theme-sm", color: "theme-neutral" } },
+                      { type: "ContentButton", props: { label: "−", destinationType: "action", buttonAction: "cartQtyDecrease", buttonVariantMode: "fixed", buttonVariantSize: "sm" } },
+                      { type: "ContentParagraph", props: { text: "1", valueContext: { path: "quantity" }, textAlign: "center", fontSize: "theme-md" } },
+                      { type: "ContentButton", props: { label: "+", destinationType: "action", buttonAction: "cartQtyIncrease", buttonVariantMode: "fixed", buttonVariantSize: "sm" } },
+                    ],
+                  },
+                },
+                { type: "ContentButton", props: { label: "إتمام الطلب", align: "center", destinationType: "action", buttonAction: "makeOrder", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+              ],
+            },
+          }],
+        },
+      ],
+    }),
+  },
+  {
+    legacy: true,
+    legacyReason: "Uses Space and RowGroup — web-only layout blocks, not in the mobile block set.",
+    label: "Blocks: buttons · images · divider · spacing · video",
+    json: PK({
+      root: {
+        props: {
+          title: "معرض البلوكات", direction: "rtl", language: "ar",
+          primary: "#0b78c5", surface: "#f6f8fc", text: "#14243f", neutral: "#6b7d93",
+          bodyFont: "cairo", radiusMd: "12px", radiusLg: "18px",
+        },
+      },
+      zones: {},
+      pages: [{
+        path: "/showcase", slug: "/showcase", name: "معرض البلوكات", link: "/showcase", title: "معرض البلوكات",
+        content: [{
+          type: "Section",
+          props: {
+            name: "المحتوى", paddingTop: "40px", paddingBottom: "40px", paddingHorizontal: "24px",
+            backgroundColor: "#ffffff", maxWidth: "1280px", columns: 1, columnsMobile: 1, gridGap: "24px",
+            content: [
+              { type: "ContentHeading", props: { text: "بلوكات المحتوى", level: "2", textAlign: "right", fontSize: "theme-xl", fontWeight: "theme-bold", color: "theme-text" } },
+
+              // Image — single banner
+              { type: "ContentImage", props: { src: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80", alt: "حذاء رياضي", align: "center", objectFit: "cover", radius: "theme-lg", maxWidth: "800px" } },
+
+              // Spacing
+              { type: "Space", props: { size: "theme-24" } },
+
+              // Images — gallery grid
+              {
+                type: "ImageGallery",
+                props: {
+                  mode: "grid", gridColumns: 2, gridRows: 0, aspectRatio: "landscape",
+                  objectFit: "cover", radius: "theme-md", gap: "theme-16",
+                  images: [
+                    { src: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80", alt: "ساعة" },
+                    { src: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?auto=format&fit=crop&w=800&q=80", alt: "كاميرا" },
+                  ],
+                },
+              },
+
+              // Divider — theme colour
+              { type: "ContentDivider", props: { thickness: "1px", colorMode: "theme", colorTheme: "neutral" } },
+
+              // Buttons — variant mode and fixed mode, side by side
+              {
+                type: "RowGroup",
+                props: {
+                  gap: 12, alignItems: "center", justifyContent: "center", wrap: "wrap", padding: "0px",
+                  content: [
+                    { type: "ContentButton", props: { label: "تسوّق الآن", align: "center", destinationType: "link", link: { kind: "page", pageId: "/products" }, buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+                    { type: "ContentButton", props: { label: "تابعنا", align: "center", destinationType: "link", link: { kind: "url", url: "https://example.com", target: "_blank" }, buttonVariantMode: "fixed", bgColor: "theme-neutral", textColor: "theme-surface", buttonSize: "theme-md", radius: "theme-full" } },
+                  ],
+                },
+              },
+
+              { type: "Space", props: { size: "theme-40" } },
+
+              // Divider — fixed colour
+              { type: "ContentDivider", props: { thickness: "2px", colorMode: "fixed", colorFixed: "#0b78c5" } },
+
+              // Video — YouTube embed
+              { type: "ContentHeading", props: { text: "شاهد الفيديو التعريفي", level: "3", textAlign: "right", fontSize: "theme-lg" } },
+              { type: "VideoEmbed", props: { src: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", align: "center", size: "theme-480", radius: "theme-lg" } },
+            ],
+          },
+        }],
+      }],
+    }),
+  },
+  {
+    legacy: true,
+    legacyReason: "Superseded by the /products page of the 3-page mobile example.",
+    label: "Products Grid preset (bound card template)",
+    json: PK({
+      root: {
+        props: {
+          title: "متجري", direction: "rtl", language: "ar",
+          primary: "#0b78c5", surface: "#f6f8fc", text: "#14243f", neutral: "#6b7d93",
+          bodyFont: "cairo", radiusMd: "12px",
+        },
+      },
+      zones: {},
+      pages: [{
+        path: "/products", slug: "/products", name: "المنتجات", link: "/products", title: "كل المنتجات",
+        content: [
+          {
+            type: "Section",
+            props: {
+              name: "مقدمة", paddingTop: "32px", paddingBottom: "0px", paddingHorizontal: "24px",
+              columns: 1, columnsMobile: 1,
+              content: [
+                { type: "ContentHeading", props: { text: "المنتجات المميزة", level: "2", textAlign: "right", fontSize: "theme-xl", color: "theme-text" } },
+              ],
+            },
+          },
+          {
+            // Products Grid preset: `content` holds exactly ONE card-template Group with
+            // `product: null`. The repeater clones it per product in the picked collection,
+            // and children read live values through `valueContext` — no per-product blocks.
+            type: "Section",
+            props: {
+              name: "Featured", paddingTop: "24px", paddingBottom: "48px", paddingHorizontal: "24px",
+              maxWidth: "1280px", columns: 3, columnsMobile: 2, gridGap: "16px",
+              metadata: { preset: "products-grid" },
+              sectionKind: "products-grid",
+              collection: { id: "coll_featured", name: "Featured", slug: "featured", productCount: 24 },
+              content: [{
+                type: "Group",
+                props: {
+                  product: null, metadata: null, skipProductDetailFetch: true,
+                  direction: "column", gap: 10, alignItems: "stretch", justifyContent: "flex-start",
+                  backgroundColor: "theme-surface", padding: "12px", borderRadius: "theme-md", boxShadow: "sm",
+                  language: "ar",
+                  content: [
+                    { type: "ContentImage", props: { src: "https://placehold.co/400x400", valueContext: { path: "images[0].url" }, altValueContext: { path: "product.title" }, alt: "صورة المنتج", objectFit: "cover", radius: "theme-md" } },
+                    { type: "ContentHeading", props: { text: "اسم المنتج", valueContext: { path: "product.title" }, level: "3", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-semibold", color: "theme-text" } },
+                    { type: "ContentParagraph", props: { text: "٠ ل.س", valueContext: { path: "pricing.displayPrice" }, textAlign: "right", fontSize: "theme-sm", color: "theme-primary" } },
+                    { type: "ContentButton", props: { label: "إضافة إلى السلة", align: "center", destinationType: "action", buttonAction: "addToCart", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "sm" } },
+                  ],
+                },
+              }],
+            },
+          },
+        ],
+      }],
+    }),
+  },
+  {
+    legacy: true,
+    legacyReason: "Bare 1c page envelope with no blocks; kept only as an envelope smoke test.",
     label: "Page Shell (Envelope)",
     json: PK({
       path: "/profile",
@@ -3794,6 +4559,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Uses legacy Text / Space / Button web block types.",
     label: "Section → container+column",
     json: PK({
       type: "Section",
@@ -3808,6 +4575,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Uses legacy Heading / Text / Button web block types.",
     label: "Heading + Text + Button",
     json: PK({
       type: "Section",
@@ -3822,6 +4591,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Uses the legacy Button web block type.",
     label: "Flex Row + Button",
     json: PK({
       type: "Flex",
@@ -3835,6 +4606,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Uses legacy Image / Icon / Video web block types.",
     label: "Image + Video + Icon",
     json: PK({
       type: "Section",
@@ -3848,6 +4621,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Hero is not in the mobile block set; compose Section + Group + ContentHeading instead.",
     label: "Hero Banner",
     json: PK({
       type: "Hero",
@@ -3864,6 +4639,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Card and Badge are not in the mobile block set; use a styled Group instead.",
     label: "Card + Badge + Divider",
     json: PK({
       type: "Section",
@@ -3885,6 +4662,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Standalone ProductGrid is legacy; use the products-grid Section preset.",
     label: "Commerce: Product Grid",
     json: PK({
       type: "ProductGrid",
@@ -3892,6 +4671,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "ProductCard / ProductCarousel are legacy; use a bound Group inside a products-grid Section.",
     label: "Commerce: Product Card + Details",
     json: PK({
       type: "Section",
@@ -3913,6 +4694,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "TestimonialGrid is legacy; the mobile block set has Testimonials.",
     label: "Testimonial + Grid",
     json: PK({
       type: "Section",
@@ -3927,6 +4710,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Countdown / SearchModal / CookieConsent are not in the mobile block set.",
     label: "Utility: Countdown + Search + Cookie",
     json: PK({
       type: "Section",
@@ -3940,6 +4725,8 @@ export const EXAMPLE_PRESETS: { label: string; json: string }[] = [
     }),
   },
   {
+    legacy: true,
+    legacyReason: "Built from Hero / Heading / Space / ProductGrid / TestimonialGrid / Card / SiteHeader / SiteFooter — all outside the mobile block set.",
     label: "Full Home Page (All Blocks)",
     json: PK({
       path: "/",

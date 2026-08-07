@@ -121,6 +121,14 @@ export default function ConverterPage() {
   const [activePreset, setActivePreset] = useState(0);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [detectedRules, setDetectedRules] = useState<string[]>([]);
+  // Legacy presets are authored from web blocks outside the mobile block set
+  // (docs/BLOCKS-MOBILE.md). They stay reachable as regression fixtures, but they are
+  // disabled by default so they are never copied as a template for new work.
+  const [showLegacy, setShowLegacy] = useState(false);
+
+  const visiblePresets = EXAMPLE_PRESETS.map((preset, index) => ({ preset, index })).filter(
+    ({ preset }) => showLegacy || !preset.legacy
+  );
 
   const runTransform = useCallback((json: string) => {
     if (!json.trim()) {
@@ -221,17 +229,21 @@ export default function ConverterPage() {
         <span className="text-xs text-muted-foreground font-medium shrink-0">Examples:</span>
         {/* Desktop: show all presets as pills */}
         <div className="hidden md:flex items-center gap-1.5 flex-wrap">
-          {EXAMPLE_PRESETS.map((preset, i) => (
+          {visiblePresets.map(({ preset, index }) => (
             <button
-              key={i}
-              onClick={() => handlePresetSelect(i)}
+              key={index}
+              onClick={() => handlePresetSelect(index)}
+              title={preset.legacy ? `Legacy — ${preset.legacyReason ?? ""}` : undefined}
               className={cn(
                 "px-2.5 py-1 text-xs rounded-md border transition-colors font-medium",
-                activePreset === i
+                activePreset === index
                   ? "bg-primary/20 text-primary border-primary/40"
-                  : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/60 hover:text-foreground"
+                  : preset.legacy
+                    ? "bg-muted/10 text-muted-foreground/60 border-border/50 border-dashed hover:bg-muted/30 hover:text-muted-foreground"
+                    : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/60 hover:text-foreground"
               )}
             >
+              {preset.legacy && <span className="mr-1 opacity-70">legacy</span>}
               {preset.label}
             </button>
           ))}
@@ -247,17 +259,20 @@ export default function ConverterPage() {
           </button>
           {presetsOpen && (
             <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[200px]">
-              {EXAMPLE_PRESETS.map((preset, i) => (
+              {visiblePresets.map(({ preset, index }) => (
                 <button
-                  key={i}
-                  onClick={() => handlePresetSelect(i)}
+                  key={index}
+                  onClick={() => handlePresetSelect(index)}
                   className={cn(
                     "w-full text-left px-3 py-2 text-xs transition-colors",
-                    activePreset === i
+                    activePreset === index
                       ? "text-primary bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                      : preset.legacy
+                        ? "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   )}
                 >
+                  {preset.legacy && <span className="mr-1 opacity-70">legacy</span>}
                   {preset.label}
                 </button>
               ))}
@@ -266,6 +281,25 @@ export default function ConverterPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => {
+              const next = !showLegacy;
+              setShowLegacy(next);
+              // Don't leave a now-hidden legacy preset selected.
+              if (!next && activePreset >= 0 && EXAMPLE_PRESETS[activePreset]?.legacy) {
+                handlePresetSelect(0);
+              }
+            }}
+            title="Legacy examples use web blocks that are not in the mobile block set (docs/BLOCKS-MOBILE.md)"
+            className={cn(
+              "px-2.5 py-1 text-xs rounded-md border transition-colors",
+              showLegacy
+                ? "border-amber-500/40 bg-amber-500/15 text-amber-400"
+                : "border-border bg-muted/30 text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {showLegacy ? "Hide" : "Show"} legacy ({EXAMPLE_PRESETS.filter((p) => p.legacy).length})
+          </button>
           {badge && (
             <span className={cn("px-2 py-0.5 text-xs rounded border font-mono hidden sm:inline", badge.color)}>
               {badge.label}

@@ -1,11 +1,32 @@
 # Converter Output Specification
 
-**Version:** 2026-07-05 *(revised per mobile team reviews — see `CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`, `CONVERTER-SPEC-REVIEW-2026-07-05.md`)*  
+**Version:** 2026-08-07 *(retargeted to the mobile block set — see `docs/BLOCKS-MOBILE.md`; earlier revisions per mobile team reviews `CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`, `CONVERTER-SPEC-REVIEW-2026-07-05.md`)*  
 **Source file:** `lib/transformer.ts` → `transformWebToMobile()`  
+**Web input source of truth:** [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md)  
 **Audience:** Mobile engine team — Flutter SDUI renderers, schema validation, Dart model generation  
 **Purpose:** Authoritative description of every JSON shape the converter emits. Use this document as the single source of truth when building renderers, writing Dart schemas, and validating converter output.
 
 > **Scope:** This document describes **mobile output only**. Web JSON (Puck blocks) is never forwarded to the engine as-is. The converter transforms every web block type into the mobile primitives listed below.
+
+> ### Input scope — the mobile block set
+>
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md) defines the **mobile block set**: the 22 web block
+> types the mobile Site JSON registry accepts. **Author every new example from that list and nothing
+> else.** [`docs/BLOCKS.md`](docs/BLOCKS.md) is the wider web reference and is **legacy** here.
+>
+> **Mobile block set (22):** `Accordion`, `Blank`, `ButtonGroup`, `Chip`, `ContentButton`,
+> `ContentDivider`, `ContentHeading`, `ContentIcon`, `ContentImage`, `ContentInput`, `ContentLink`,
+> `ContentParagraph`, `ContentSwitch`, `Flex`, `Grid`, `Group`, `ImageGallery`, `Section`,
+> `Testimonials`, `VideoEmbed`, `ZoneDrawer`, `ZoneBottomSheet`.
+>
+> Every one of these is documented in [§ 6A](#6a--mobile-block-set). Blocks outside the set still
+> convert — merchant payloads predating the mobile registry contain them — but they are grouped in
+> [§ 6B](#6b--legacy-web-blocks-not-in-the-mobile-block-set) and marked **LEGACY**. `SiteHeader` and
+> `SiteFooter` are a special case: not in the block set, but they are **site zones** that still drive
+> `appBar` and `pages[].footer` ([§ 7](#7-page-envelope-structure)), so their ingest rules are live.
+>
+> The worked reference payload is [§ 14 — Three-page example](#14-worked-example--three-page-mobile-site-json)
+> (`home` · `login` · `products`), also available as the first preset in the converter playground.
 
 ---
 
@@ -17,13 +38,16 @@
 4. [Global rules (apply to every node)](#4-global-rules)
 5. [Token resolution tables](#5-token-resolution-tables)
 6. [Block transformations with examples](#6-block-transformations)
+   - [6A — Mobile block set](#6a--mobile-block-set)
+   - [6B — Legacy web blocks](#6b--legacy-web-blocks-not-in-the-mobile-block-set)
 7. [Page envelope structure](#7-page-envelope-structure)
 8. [Locale rules](#8-locale-rules)
 9. [Data-bound blocks (API-connected)](#9-data-bound-blocks)
 10. [Unsupported blocks](#10-unsupported-blocks)
 11. [Validation checklist](#11-validation-checklist)
 12. [Known limitations](#12-known-limitations)
-13. [Block convertibility matrix](#13-block-convertibility-matrix-blocksmd)
+13. [Block convertibility matrix](#13-block-convertibility-matrix)
+14. [Worked example — three-page mobile Site JSON](#14-worked-example--three-page-mobile-site-json)
 
 ---
 
@@ -140,7 +164,10 @@ Web block type names (`Button`, `Section`, `ContentParagraph`, etc.) **never app
 
 ## 3. Web Type Aliases
 
-The converter normalises the following web type names before dispatch:
+The converter normalises the following web type names before dispatch. The internal name on the right
+is an implementation detail — it **never** appears in output.
+
+**Mobile block set:**
 
 
 | Web type           | Resolved as                                  |
@@ -151,10 +178,18 @@ The converter normalises the following web type names before dispatch:
 | `ContentButton`    | `Button`                                     |
 | `ContentDivider`   | `Divider`                                    |
 | `ContentIcon`      | `Icon`                                       |
-| `ContentHtml`      | `Html` (→ `richtext`)                        |
 | `ContentLink`      | `Link` (→ `button` `variant: "text"`)        |
 | `ContentInput`     | `Input` (→ `textFormField`)                  |
+| `ContentSwitch`    | `Switch` (→ `switchField`)                   |
 | `VideoEmbed`       | `YouTube` (handles both YouTube and MP4/HLS) |
+
+
+**LEGACY** *(not in the mobile block set — see [§ 6B](#6b--legacy-web-blocks-not-in-the-mobile-block-set)):*
+
+
+| Web type           | Resolved as                                  |
+| ------------------ | -------------------------------------------- |
+| `ContentHtml`      | `Html` (→ `richtext`)                        |
 | `ProductsGrid`     | `ProductGrid`                                |
 | `OrderHistory`     | `OrderList`                                  |
 | `RowGroup`         | `Group` *(forced `direction: "row"`)*        |
@@ -295,14 +330,14 @@ Valid `crossAxisAlignment` values: `start`, `center`, `end`, `stretch`, `baselin
 | Web token                 | Resolved number | Context                              |
 | ------------------------- | --------------- | ------------------------------------ |
 | `theme-xs`                | `12`            | fontSize                             |
+| `theme-xs`                | `4`             | spacing / borderRadius               |
 | `theme-sm`                | `14`            | fontSize                             |
-| `theme-sm`                | `4`             | borderRadius                         |
-| `theme-md`                | `16`            | fontSize / spacing                   |
-| `theme-md`                | `8`             | borderRadius                         |
+| `theme-sm`                | `8`             | spacing / borderRadius               |
+| `theme-md`                | `16`            | fontSize / spacing / borderRadius    |
 | `theme-lg`                | `18`            | fontSize                             |
-| `theme-lg`                | `12`            | borderRadius                         |
+| `theme-lg`                | `24`            | spacing / borderRadius               |
 | `theme-xl`                | `22`            | fontSize                             |
-| `theme-xl`                | `16`            | borderRadius                         |
+| `theme-xl`                | `36`            | spacing / borderRadius               |
 | `theme-2xl` / `theme-xxl` | `28`            | fontSize                             |
 | `theme-none`              | `0`             | borderRadius                         |
 | `theme-full`              | `999`           | borderRadius                         |
@@ -317,7 +352,17 @@ Valid `crossAxisAlignment` values: `start`, `center`, `end`, `stretch`, `baselin
 | `"60px"`                  | `60`            | any numeric prop (px stripped)       |
 
 
-> **Note:** `theme-sm/md/lg/xl` borderRadius values use the above fixed fallbacks. If `rootProps` contains `radiusSm`, `radiusMd`, `radiusLg`, `radiusXl`, those values override the fixed fallbacks.
+> ### ⚠️ Known deviation — radius tokens resolve on the spacing scale
+>
+> `theme-sm/md/lg/xl` in a **borderRadius** position currently resolve to the **spacing** numbers in
+> the table above (`8 / 16 / 24 / 36`), *not* to a separate radius scale (`4 / 8 / 12 / 16`), and
+> `rootProps.radiusSm` / `radiusMd` / `radiusLg` / `radiusXl` are **ignored**. `resolveThemePx()`
+> matches its spacing map before its radius map, so the radius branch is unreachable for these four
+> keys. `theme-none` → `0` and `theme-full` → `999` are unaffected.
+>
+> Renderers should treat the emitted number as authoritative and not try to re-derive it from the
+> theme. This deviation is tracked for a fix; when it lands, this table changes to the radius scale
+> and the override note returns.
 
 ### Gap token map
 
@@ -487,6 +532,45 @@ Accepted by `container`, `button`, and `textFormField` only. (`card` uses `eleva
 
 Each subsection shows the web input (what the converter receives) and the exact mobile output it emits.
 
+Subsections are grouped by whether the web block type is in the **mobile block set**
+([`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md)). Numbers are stable across this regrouping, so
+existing references such as “§ 6.12” still resolve — they are simply no longer in numeric order.
+
+---
+
+## 6A — Mobile block set
+
+The 22 block types the mobile Site JSON registry emits. **Author every new example from this list.**
+
+| Block | Subsection | Mobile output |
+| --- | --- | --- |
+| `Accordion` | [§ 6.15](#615-accordion) | `column` of `expansionTile` |
+| `Blank` | [§ 6.28](#628-blank) | *omitted* |
+| `ButtonGroup` | [§ 6.36](#636-buttongroup) | `row` of `button` (static only) |
+| `Chip` | [§ 6.37](#637-chip) | *skipped + warning* |
+| `ContentButton` | [§ 6.5](#65-button--contentbutton) | `button` + node-level `tap` |
+| `ContentDivider` | [§ 6.9](#69-divider--contentdivider) | `divider` |
+| `ContentHeading` | [§ 6.2](#62-heading--contentheading) | `text` |
+| `ContentIcon` | [§ 6.7](#67-icon--contenticon) | `icon` |
+| `ContentImage` | [§ 6.8](#68-image--contentimage) | `image` |
+| `ContentInput` | [§ 6.34](#634-contentinput) | `textFormField` (+ `form` wrapper) |
+| `ContentLink` | [§ 6.6](#66-link) | `button` `variant: "text"` |
+| `ContentParagraph` | [§ 6.1](#61-text--contentparagraph) | `text` |
+| `ContentSwitch` | [§ 6.35](#635-contentswitch) | `switchField` |
+| `Flex` | [§ 6.18](#618-group--flex) | `row` / `column` |
+| `Grid` | [§ 6.19](#619-grid-layout) | `gridView` |
+| `Group` | [§ 6.18](#618-group--flex) | `row` / `column` (+ `container` when styled) |
+| `ImageGallery` | [§ 6.16](#616-imagegallery-slider-mode) | `imageSlider` / `gridView` |
+| `Section` | [§ 6.17](#617-section) | `container` + `column` / `gridView` / `stack` |
+| `Testimonials` | [§ 6.25](#625-testimonials) | `column` of `card` / horizontal `listView` |
+| `VideoEmbed` | [§ 6.11](#611-videoembed-youtube) | `image` + `openUrl`, or `videoPlayer` |
+| `ZoneDrawer` | [§ 6.38](#638-zonedrawer--zonebottomsheet) | page-level `appDrawer` |
+| `ZoneBottomSheet` | [§ 6.38](#638-zonedrawer--zonebottomsheet) | `tap.openBottomSheet.child` |
+
+Sections [§ 6.29](#629-timer)–[§ 6.32](#632-switchfield) document mobile primitives with no 1:1 web block
+(`timer`, `radioGroup`, `visibleWhen`, `switchField`) — emit them when hand-authoring, and read
+[§ 6.32](#632-switchfield) as the prop reference behind [§ 6.35](#635-contentswitch).
+
 ---
 
 ### 6.1 Text / ContentParagraph
@@ -588,47 +672,6 @@ Each subsection shows the web input (what the converter receives) and the exact 
 
 ---
 
-### 6.3 RichText / ContentHtml
-
-**Web input:**
-
-```json
-{ "type": "RichText", "props": { "richtext": "<h2>عن المتجر</h2><p>نحن متجر متخصص...</p>" } }
-```
-
-**Mobile output:**
-
-```json
-{
-  "id": "richtext-1",
-  "type": "richtext",
-  "props": { "value": "<h2>عن المتجر</h2><p>نحن متجر متخصص...</p>" }
-}
-```
-
-The HTML is passed through as-is. The mobile renderer strips tags for display.
-
----
-
-### 6.4 Space
-
-**Web input:**
-
-```json
-{ "type": "Space", "props": { "size": "theme-40", "direction": "vertical" } }
-```
-
-**Mobile output:**
-
-```json
-{ "id": "spacer-1", "type": "sizedBox", "props": { "height": 40 } }
-```
-
-- `direction: "horizontal"` → emits `"width"` instead of `"height"`.
-- Default direction is `vertical`.
-
----
-
 ### 6.5 Button / ContentButton
 
 **Web input:**
@@ -682,7 +725,8 @@ The HTML is passed through as-is. The mobile renderer strips tags for display.
 | `link` + `link.kind: "url"`  | `{ "type": "openUrl", "url": "<url>" }`                                                                                                                                                                                                         |
 | `href` (internal path)       | `{ "type": "navigate", "route": "<path>", "navigation_type": "push" }`                                                                                                                                                                          |
 | `href` (http/https/www)      | `{ "type": "openUrl", "url": "<href>" }`                                                                                                                                                                                                        |
-| `login`                      | `{ "type": "navigate", "route": "/auth/login", "navigation_type": "push" }`                                                                                                                                                                     |
+| `login` *(no sibling inputs)* | `{ "type": "navigate", "route": "/auth/login", "navigation_type": "push" }` — entry point to the engine's native auth screen                                                                                                                    |
+| `login` *(inside a Section with `ContentInput` fields)* | `{ "type": "cubitCall", "cubit": "auth", "method": "login", "requireValidForm": true, "formId": "login-form", "params": { "<field>": { "source": "form", "field": "<field>" } } }` — the Section becomes a `form`; see [§ 6.34](#auth-forms--the-form-wrapper) |
 | `logout`                     | `{ "type": "cubitCall", "cubit": "auth", "method": "logout", "onSuccess": { "type": "navigate", "route": "/auth/login", "navigation_type": "go" } }`                                                                                            |
 | `addToCart`                  | `{ "type": "cubitCall", "cubit": "cart", "method": "addItem" }`                                                                                                                                                                                 |
 | `addToWishlist`              | `{ "type": "navigate", "route": "/wishlist", "navigation_type": "push" }`                                                                                                                                                                       |
@@ -853,49 +897,6 @@ Unknown Lucide icons resolve to `help_outline`.
 
 ---
 
-### 6.10 Video (MP4 / HLS)
-
-`Video` blocks (direct MP4/HLS src) are transformed to `videoPlayer`.
-
-**Web input:**
-
-```json
-{
-  "type": "Video",
-  "props": {
-    "src": "https://example.com/promo.mp4",
-    "controls": "on",
-    "autoPlay": "off",
-    "aspectRatio": "16:9"
-  }
-}
-```
-
-**Mobile output:**
-
-```json
-{
-  "id": "video-wrapper-1",
-  "type": "container",
-  "props": { "aspectRatio": 1.777 },
-  "child": {
-    "id": "video-2",
-    "type": "videoPlayer",
-    "props": {
-      "url": "https://example.com/promo.mp4",
-      "showControls": true,
-      "autoplay": false
-    }
-  }
-}
-```
-
-When no `aspectRatio` is set, the `container` wrapper is omitted and `videoPlayer` is emitted directly.
-
-> `loop` and `muted` are **not** read by the engine — do not emit them.
-
----
-
 ### 6.11 VideoEmbed (YouTube)
 
 YouTube URLs are converted to a thumbnail image with an `openUrl` tap.
@@ -939,188 +940,6 @@ Non-YouTube `VideoEmbed` is treated the same as a `Video` block:
   }
 }
 ```
-
----
-
-### 6.12 Hero
-
-#### Background image mode → `stack`
-
-**Web input:**
-
-```json
-{
-  "type": "Hero",
-  "props": {
-    "title": "ابدأ التسوق",
-    "description": "أفضل المنتجات بأفضل الأسعار",
-    "align": "center",
-    "padding": "40px",
-    "image": { "url": "https://example.com/hero.jpg", "mode": "background" },
-    "buttons": [
-      { "label": "تسوق الآن", "variant": "primary", "href": "/products" }
-    ]
-  }
-}
-```
-
-**Mobile output:**
-
-```json
-{
-  "id": "hero-stack-1",
-  "type": "stack",
-  "props": { "fit": "loose" },
-  "children": [
-    {
-      "id": "hero-bg-2",
-      "type": "image",
-      "props": { "url": "https://example.com/hero.jpg", "source": "network", "fit": "cover", "stackLayer": "fill" }
-    },
-    {
-      "id": "hero-col-3",
-      "type": "column",
-      "props": { "mainAxisAlignment": "center", "crossAxisAlignment": "center", "gap": 16, "padding": 40 },
-      "children": [
-        { "id": "hero-title-4", "type": "text", "props": { "value": "ابدأ التسوق", "fontSize": 28, "fontWeight": "bold", "textAlign": "center" } },
-        { "id": "hero-desc-5", "type": "text", "props": { "value": "أفضل المنتجات بأفضل الأسعار", "fontSize": 16, "textAlign": "center" } },
-        {
-          "id": "hero-buttons-6",
-          "type": "row",
-          "props": { "mainAxisAlignment": "center", "crossAxisAlignment": "center", "gap": 12 },
-          "children": [
-            {
-              "id": "hero-btn-7",
-              "type": "button",
-              "props": { "label": "تسوق الآن", "variant": "elevated", "height": 48 },
-              "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-`**stack` child positioning** — per-child props on each child node's `props` (not on the `stack` itself):
-
-
-| Prop               | Notes                                                            |
-| ------------------ | ---------------------------------------------------------------- |
-| `stackLayer`       | `"fill"` (index 0 default) | `"positioned"` (default for others) |
-| `stackAlign`       | alignment when positioned (default `"bottomCenter"`)             |
-| `stackInsetBottom` | fixed px from bottom — preferred for footers/docks               |
-| `stackWidthFactor` | width as fraction of stack (`1` = full width)                    |
-
-
-Without these, every non-background child lands at the default bottom-center position. Background images should use `stackLayer: "fill"`.
-
-#### No background image → `container` + `column`
-
-When no background image is present, Hero emits:
-
-```json
-{
-  "id": "hero-container-1",
-  "type": "container",
-  "props": { "padding": { "top": 80, "bottom": 80, "left": 24, "right": 24 } },
-  "child": {
-    "id": "hero-col-2",
-    "type": "column",
-    "props": { "crossAxisAlignment": "center", "mainAxisAlignment": "center", "gap": 16 },
-    "children": [ ... ]
-  }
-}
-```
-
----
-
-### 6.13 Card
-
-**Web input:**
-
-```json
-{
-  "type": "Card",
-  "props": {
-    "title": "شحن سريع",
-    "description": "توصيل خلال يومي عمل",
-    "icon": "truck",
-    "mode": "card"
-  }
-}
-```
-
-**Mobile output:**
-
-```json
-{
-  "id": "card-1",
-  "type": "card",
-  "props": { "elevation": 2, "borderRadius": 8 },
-  "child": {
-    "id": "card-body-2",
-    "type": "column",
-    "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "start", "gap": 8, "padding": 16 },
-    "children": [
-      { "id": "card-icon-3", "type": "icon", "props": { "name": "local_shipping", "size": 32, "color": "#0b78c5" } },
-      { "id": "card-title-4", "type": "text", "props": { "value": "شحن سريع", "fontSize": 16, "fontWeight": "bold" } },
-      { "id": "card-desc-5", "type": "text", "props": { "value": "توصيل خلال يومي عمل", "fontSize": 14, "color": "#64748b" } }
-    ]
-  }
-}
-```
-
-`**mode` → `elevation` map:**
-
-
-| Web `mode` / `variant` | Mobile `elevation` |
-| ---------------------- | ------------------ |
-| `card`                 | `2`                |
-| `flat`                 | `0`                |
-| `outlined`             | `0`                |
-| `elevated`             | `4`                |
-| `default`              | `1`                |
-
-
----
-
-### 6.14 Badge
-
-**Web input:**
-
-```json
-{ "type": "Badge", "props": { "label": "-20%", "variant": "discount", "size": "md" } }
-```
-
-**Mobile output:**
-
-```json
-{
-  "id": "badge-1",
-  "type": "container",
-  "props": { "padding": { "left": 8, "right": 8, "top": 4, "bottom": 4 }, "color": "#FEE2E2", "borderRadius": 9999 },
-  "child": {
-    "id": "badge-label-2",
-    "type": "text",
-    "props": { "value": "-20%", "fontSize": 14, "fontWeight": "bold", "color": "#DC2626" }
-  }
-}
-```
-
-**Badge variants and colors:**
-
-
-| Variant            | Background | Foreground |
-| ------------------ | ---------- | ---------- |
-| `discount`         | `#FEE2E2`  | `#DC2626`  |
-| `inStock`          | `#DCFCE7`  | `#16A34A`  |
-| `outOfStock`       | `#F3F4F6`  | `#6B7280`  |
-| `custom` / *other* | `#EBF5FF`  | `#2563EB`  |
-
-
-**Font size by `size`:** `sm` → 12, `md` → 14, `lg` → 16.
 
 ---
 
@@ -1341,6 +1160,41 @@ When no background image is present, Hero emits:
 
 ---
 
+### 6.20 Section with background image
+
+When `backgroundImage` is present on a `Section`:
+
+```json
+{
+  "id": "section-stack-1",
+  "type": "stack",
+  "props": { "fit": "loose" },
+  "children": [
+    { "id": "section-bg-image-2", "type": "image", "props": { "url": "...", "source": "network", "fit": "cover", "stackLayer": "fill" } },
+    {
+      "id": "section-overlay-3",
+      "type": "container",
+      "props": { "color": "rgba(0,0,0,0.4)" }
+    },
+    {
+      "id": "section-inner-4",
+      "type": "container",
+      "props": { "padding": { "top": 60, "bottom": 60, "left": 24, "right": 24 } },
+      "child": {
+        "id": "section-column-5",
+        "type": "column",
+        "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
+        "children": [ ... ]
+      }
+    }
+  ]
+}
+```
+
+> See [Section 6.12](#612-hero) for `stack` child positioning props (`stackLayer`, `stackAlign`, `stackInsetBottom`, `stackWidthFactor`).
+
+---
+
 ### 6.18 Group / Flex
 
 **Web input:**
@@ -1407,42 +1261,890 @@ When no background image is present, Hero emits:
 
 ---
 
-### 6.20 Section with background image
+### 6.25 Testimonials
 
-When `backgroundImage` is present on a `Section`:
+#### Grid layout (default)
 
 ```json
 {
-  "id": "section-stack-1",
-  "type": "stack",
-  "props": { "fit": "loose" },
+  "id": "testimonials-grid-1",
+  "type": "column",
+  "props": { "crossAxisAlignment": "stretch", "mainAxisAlignment": "start", "gap": 16 },
   "children": [
-    { "id": "section-bg-image-2", "type": "image", "props": { "url": "...", "source": "network", "fit": "cover", "stackLayer": "fill" } },
     {
-      "id": "section-overlay-3",
-      "type": "container",
-      "props": { "color": "rgba(0,0,0,0.4)" }
-    },
-    {
-      "id": "section-inner-4",
-      "type": "container",
-      "props": { "padding": { "top": 60, "bottom": 60, "left": 24, "right": 24 } },
-      "child": {
-        "id": "section-column-5",
-        "type": "column",
-        "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
-        "children": [ ... ]
-      }
+      "id": "tm-row-2",
+      "type": "row",
+      "props": { "mainAxisAlignment": "spaceBetween", "crossAxisAlignment": "stretch", "gap": 16 },
+      "children": [
+        {
+          "id": "tm-row-cell-3",
+          "type": "container",
+          "props": { "expand": true, "expandAxis": "horizontal" },
+          "child": {
+            "id": "testimonial-4",
+            "type": "card",
+            "props": { "elevation": 1, "borderRadius": 12 },
+            "child": {
+              "id": "tm-body-5",
+              "type": "column",
+              "props": { "crossAxisAlignment": "start", "mainAxisAlignment": "start", "gap": 8 },
+              "children": [
+                { "id": "tm-rating-6", "type": "text", "props": { "value": "★★★★★", "fontSize": 16, "color": "#f59e0b" } },
+                { "id": "tm-quote-7", "type": "text", "props": { "value": "منتج رائع!", "fontSize": 14 } },
+                { "id": "tm-name-8", "type": "text", "props": { "value": "سارة", "fontSize": 14, "fontWeight": "bold" } }
+              ]
+            }
+          }
+        }
+      ]
     }
   ]
 }
 ```
 
-> See [Section 6.12](#612-hero) for `stack` child positioning props (`stackLayer`, `stackAlign`, `stackInsetBottom`, `stackWidthFactor`).
+#### Carousel layout (`layoutVariant: "carousel"`)
+
+```json
+{
+  "id": "testimonials-carousel-1",
+  "type": "listView",
+  "props": { "scrollDirection": "horizontal" },
+  "children": [
+    {
+      "id": "tm-carousel-cell-2",
+      "type": "container",
+      "props": { "width": 280 },
+      "child": { ... }
+    }
+  ]
+}
+```
+
+---
+
+### 6.28 Blank
+
+`Blank` blocks are **omitted** entirely (return `null`). No node is emitted.
+
+---
+
+### 6.34 ContentInput
+
+Mobile block set. A form field → `textFormField`. The field key is `props.id`, taken from the web
+`name` (falling back to `id`, then `"field"`).
+
+**Web input:**
+
+```json
+{
+  "type": "ContentInput",
+  "props": {
+    "label": "البريد الإلكتروني",
+    "name": "email",
+    "inputType": "email",
+    "placeholder": "you@example.com",
+    "required": true,
+    "prependIcon": "none",
+    "inputAction": ""
+  }
+}
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "input-1",
+  "type": "textFormField",
+  "props": {
+    "id": "email",
+    "label": "البريد الإلكتروني",
+    "hint": "you@example.com",
+    "textDirection": "ltr",
+    "keyboardType": "email",
+    "validateEmail": true,
+    "validateRequired": true
+  }
+}
+```
+
+**Field mapping:**
+
+
+| Web field                | Mobile field        | Notes                                                              |
+| ------------------------ | ------------------- | ------------------------------------------------------------------ |
+| `name` (else `id`)       | `id`                | **Required.** Form payload key — never emitted as `name`           |
+| `label`                  | `label`             | `""` = unlabelled search-bar layout                                |
+| `placeholder`            | `hint`              | required rename                                                    |
+| `required: true`         | `validateRequired`  | omitted when false                                                 |
+| `inputType`              | `keyboardType`      | see table below; `text` emits no `keyboardType`                     |
+| `prependIcon: "search"`  | `prefixIcon: "search"` | `"none"` emits nothing                                          |
+| `debounceMs`             | —                   | **dropped** (debouncing is a web store concern)                    |
+| `inputAction`            | —                   | **dropped** + warning when set to `search_products`                |
+| `valueContext.path`      | —                   | not mapped on inputs; the field stays user-editable                |
+
+
+**`inputType` → keyboard / validation / direction:**
+
+
+| `inputType` | `keyboardType` | Extra props                      | `textDirection` |
+| ----------- | -------------- | -------------------------------- | --------------- |
+| `text`      | *(omitted)*    | —                                | from `direction` |
+| `search`    | *(omitted)*    | —                                | from `direction` |
+| `email`     | `email`        | `validateEmail: true`            | always `ltr`    |
+| `tel`       | `phone`        | `validatePhone: true`            | always `ltr`    |
+| `password`  | *(omitted)*    | `obscureText: true`              | always `ltr`    |
+| `number`    | `number`       | —                                | from `direction` |
+
+
+> **Bound store actions are not wired.** `inputAction` values (`search_products`,
+> `filter_min_price`, `filter_max_price`, `profile_*`, `address_*`) describe a web `productsPage`
+> store binding with no mobile equivalent. The field is emitted as a plain input and
+> `search_products` additionally emits a warning — connect it to the search cubit by hand.
+
+**Full `textFormField` prop reference:**
+
+
+| Prop                        | Type                                          | Notes                                               |
+| --------------------------- | --------------------------------------------- | --------------------------------------------------- |
+| `id`                        | string                                        | **Required.** Field identifier used in form payload |
+| `label`                     | string                                        | Field label                                         |
+| `hint`                      | string                                        | Placeholder text                                    |
+| `textDirection`             | `"ltr"` | `"rtl"`                             | Always `"ltr"` for email/phone/password/OTP         |
+| `keyboardType`              | `"email"` | `"phone"` | `"number"` | `"text"` |                                                     |
+| `obscureText`               | boolean                                       | For passwords                                       |
+| `maxLines` / `minLines`     | number                                        | Multi-line textarea                                 |
+| `maxLength`                 | number                                        | Character cap                                       |
+| `prefixIcon` / `suffixIcon` | string                                        | Material icon name                                  |
+| `prefixText` / `suffixText` | string                                        | e.g. phone prefix `"+966"`                          |
+| `clearable`                 | boolean                                       | Show clear button                                   |
+| `shadow`                    | `"none"` | `"sm"` | `"md"` | `"lg"` | `"xl"`  |                                                     |
+| `validateRequired`          | boolean                                       |                                                     |
+| `validateEmail`             | boolean                                       |                                                     |
+| `validatePhone`             | boolean                                       |                                                     |
+| `validatePassword`          | boolean                                       |                                                     |
+| `validatePattern`           | string                                        | Regex pattern                                       |
+| `requiredMessage`           | string                                        | Custom required error text                          |
+| `validationMessage`         | string                                        | Custom validation error text                        |
+| `onSubmitted`               | action                                        | Action fired on keyboard submit                     |
+
+
+#### Auth forms — the `form` wrapper
+
+A `textFormField` on its own is not submittable: it needs an enclosing `form` node so the submit
+button can gate on validity and read params out of `FormStateStore`.
+
+The converter creates one automatically when a **`Section` holds both** at least one `ContentInput`
+(or `ContentSwitch`) **and** a `ContentButton` whose `buttonAction` is an auth action (currently
+`login`). The Section's content wrapper is then nested inside a `form`, and the button's `tap`
+becomes a `cubitCall` on the `auth` cubit instead of the navigate stub:
+
+```json
+{
+  "id": "form-75",
+  "type": "form",
+  "props": { "formId": "login-form", "id": "login-form" },
+  "child": {
+    "id": "section-column-74",
+    "type": "column",
+    "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
+    "children": [
+      { "id": "input-68", "type": "textFormField", "props": { "id": "phone", "label": "رقم الهاتف", "hint": "09xxxxxxxx", "textDirection": "ltr", "keyboardType": "phone", "validatePhone": true, "validateRequired": true } },
+      { "id": "input-69", "type": "textFormField", "props": { "id": "password", "label": "كلمة المرور", "hint": "••••••••", "textDirection": "ltr", "obscureText": true, "validateRequired": true } },
+      { "id": "switch-70", "type": "switchField", "props": { "id": "rememberMe", "label": "تذكّرني", "activeColor": "#0b78c5" } },
+      {
+        "id": "button-71",
+        "type": "button",
+        "props": { "label": "دخول", "variant": "elevated", "height": 56 },
+        "tap": {
+          "type": "cubitCall",
+          "cubit": "auth",
+          "method": "login",
+          "requireValidForm": true,
+          "formId": "login-form",
+          "params": {
+            "phone": { "source": "form", "field": "phone" },
+            "password": { "source": "form", "field": "password" }
+          },
+          "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "go" }
+        }
+      }
+    ]
+  }
+}
+```
+
+**Rules:**
+
+
+| Rule | Detail |
+| ---- | ------ |
+| `formId` | `"<action>-form"` — `login` ⇒ `"login-form"`. Mirrored as `props.id`; the renderer reads `formId` first |
+| Params | Every collected field id becomes `{ "source": "form", "field": "<id>" }` |
+| Excluded params | `passwordConfirm`, `confirmPassword`, `rememberMe` — collected for validity, never sent |
+| Scope | Field collection stops at nested `Section` boundaries; each Section owns one form |
+| `submitRedirectUrl` | → `onSuccess: { navigate, navigation_type: "go" }` |
+| No fields present | No `form` wrapper; the button falls back to `navigate → /auth/login` ([§ 6.5](#65-button--contentbutton)) |
+
+
+> A bare `login` `ContentButton` with no sibling inputs stays a **navigate stub** to the engine's
+> native `/auth/login` screen. That is the right output for a "sign in" entry point in a drawer or
+> header — only a page that actually renders the fields becomes a form.
+
+---
+
+### 6.35 ContentSwitch
+
+Mobile block set. An on/off toggle → `switchField`, which stores `"true"` / `"false"` **strings** in
+`FormStateStore` (see [§ 6.32](#632-switchfield) for the full prop reference).
+
+**Web input:**
+
+```json
+{
+  "type": "ContentSwitch",
+  "props": {
+    "label": "أوافق على تلقّي العروض",
+    "name": "marketing-opt-in",
+    "helperText": "يمكنك إلغاء الاشتراك في أي وقت.",
+    "defaultChecked": true,
+    "labelPosition": "end",
+    "switchAction": ""
+  }
+}
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "switch-1",
+  "type": "switchField",
+  "props": {
+    "id": "marketing-opt-in",
+    "label": "أوافق على تلقّي العروض",
+    "activeColor": "#0b78c5",
+    "value": "true"
+  }
+}
+```
+
+
+| Web field                | Mobile field   | Notes                                                          |
+| ------------------------ | -------------- | -------------------------------------------------------------- |
+| `name` (else `id`)       | `id`           | FormStateStore key                                             |
+| `label`                  | `label`        |                                                                |
+| `defaultChecked: true`   | `value: "true"` | String, not boolean. Omitted entirely when false               |
+| —                        | `activeColor`  | always `rootProps.primary` (fallback `#1D4ED8`)                |
+| `helperText`             | —              | **dropped** + warning; no helper-text prop on `switchField`     |
+| `labelPosition`          | —              | **dropped**; the engine places the label inline-start (RTL-aware) |
+| `switchAction`           | —              | **dropped** + warning (see below)                              |
+| `checkedValueContext`    | —              | not mapped; use `valuePath` manually if you need a bound state  |
+
+
+> **Bound store actions are not wired.** `filter_in_stock_only`, `marketing_email_opt_in`,
+> `marketing_sms_opt_in`, `address_is_default` describe a web store binding. The toggle is emitted as
+> a plain `switchField` and a warning is raised. A `filter_in_stock_only` switch in particular does
+> **not** filter a `gridView` on mobile — wire it to the products cubit by hand.
+
+A `source: "form"` `cubitCall` param reads the `"true"` / `"false"` string back out.
+
+---
+
+### 6.36 ButtonGroup
+
+Mobile block set. A segmented control. Only `bindingMode: "static"` converts.
+
+#### `bindingMode: "static"` → `row` of `button`
+
+**Web input:**
+
+```json
+{
+  "type": "ButtonGroup",
+  "props": {
+    "bindingMode": "static",
+    "defaultSelectedValue": "option-a",
+    "gap": "theme-8",
+    "align": "center",
+    "inactiveStyle": { "bgColor": "theme-surface", "textColor": "theme-text", "radius": "theme-md", "buttonSize": "theme-sm" },
+    "activeStyle": { "bgColor": "theme-primary", "textColor": "theme-surface", "radius": "theme-md", "buttonSize": "theme-sm" },
+    "items": [
+      { "title": "الخيار أ", "value": "option-a", "destinationType": "link", "link": { "kind": "page", "pageId": "/" } },
+      { "title": "الخيار ب", "value": "option-b", "destinationType": "link", "link": { "kind": "page", "pageId": "/products" } }
+    ]
+  }
+}
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "button-group-3",
+  "type": "row",
+  "props": { "mainAxisAlignment": "center", "crossAxisAlignment": "center", "gap": 8 },
+  "children": [
+    {
+      "id": "btn-group-item-1",
+      "type": "button",
+      "props": { "label": "الخيار أ", "variant": "filled", "color": "#0b78c5", "height": 36 },
+      "tap": { "type": "navigate", "route": "/home", "navigation_type": "push" }
+    },
+    {
+      "id": "btn-group-item-2",
+      "type": "button",
+      "props": { "label": "الخيار ب", "variant": "outlined", "color": "#f6f8fc", "height": 36 },
+      "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
+    }
+  ]
+}
+```
+
+
+| Web                              | Mobile                                                       |
+| -------------------------------- | ------------------------------------------------------------ |
+| `align`                          | `mainAxisAlignment` (`left`→`start`, `center`, `right`→`end`) |
+| `gap`                            | `gap` (token resolved)                                       |
+| item matching `defaultSelectedValue` | `variant: "filled"`, `color` from `activeStyle.bgColor`   |
+| every other item                 | `variant: "outlined"`, `color` from `inactiveStyle.bgColor`   |
+| `*Style.buttonSize`              | `height` ([§ 5](#button-size--height) size map)              |
+| item `destinationType` / `link` / `buttonAction` / `zoneKey` | node-level `tap`, same rules as [§ 6.5](#65-button--contentbutton) |
+| `*Style.textColor` / `radius`    | **dropped** — engine `button` accepts only `color`            |
+| `value`, `defaultSelectedValue`  | **not emitted** — see below                                   |
+
+
+> **Selection state is not tracked on mobile.** Every conversion warns. `variant: "filled"` on the
+> default item is purely cosmetic: tapping a button runs its own destination and nothing restyles.
+> If the merchant needs live segmented state, use `tabs` or a `radioGroup`
+> ([§ 6.30](#630-radiogroup)) authored by hand.
+
+#### `bindingMode: "categories"` / `"pagination"` → `unsupported`
+
+Items are generated at runtime from the web `productsPage` store, so there is nothing static to
+convert:
+
+```json
+{ "id": "unsupported-1", "type": "unsupported", "props": { "blockType": "ButtonGroup" } }
+```
+
+Warning: `ButtonGroup bindingMode "categories" builds its items from runtime store data; no static mobile equivalent. Wire category filters / pagination manually.`
+
+An empty `items[]` array in `static` mode emits `null` (the block is skipped).
+
+---
+
+### 6.37 Chip
+
+Mobile block set on the web side, but **not convertible** — `Chip` renders a runtime array read
+through `listValueContext` (product tags, category names) and the engine has no chip-list primitive.
+
+**Mobile output:** `null` — the block is skipped and a warning is emitted.
+
+```
+Chip renders a runtime array from "product.tags"; the engine has no chip-list primitive and the
+path is not in the valueContext map — block skipped
+```
+
+`listValueContext.path` values are outside the [§ 9.5](#95-valuecontext-binding-group--content-blocks)
+binding table (which maps scalars, not arrays), so there is no path to forward either.
+
+**Workaround:** if the tags matter, author a `row` of `container` + `text` nodes by hand, or fold the
+values into a single bound `text` node.
+
+---
+
+### 6.38 ZoneDrawer / ZoneBottomSheet
+
+Mobile block set, but **site zones** — they never appear in `body[]`. They are authored through the
+**المناطق** sidebar plugin, arrive under the `zones` key of the payload ([§ 1e](#1e--web-sitedata--puck-userdata-the-real-merchant-payload)),
+and are applied to every page.
+
+
+| Zone                | Becomes                                                                 | Detail                                        |
+| ------------------- | ----------------------------------------------------------------------- | --------------------------------------------- |
+| `ZoneDrawer`        | Page-level `appDrawer` built from `slot[]`                               | [§ appDrawer structure](#appdrawer-structure) |
+| `ZoneBottomSheet`   | Inlined into `tap.openBottomSheet.child` on whichever `ContentButton` / `ButtonGroup` item targets its `zoneKey` | [§ 6.5](#65-button--contentbutton) |
+
+
+**Activation flags are honoured.** `is_active: false` drops the zone; overlays additionally warn.
+`is_mobile_only` is not read by the converter — mobile output is mobile by definition.
+
+**A drawer also flips the appBar's burger button on:** when a `ZoneDrawer` is present, the page
+`appBar` gets `showMenu: true` + `menuAction: { "type": "openDrawer" }` even with no `SiteHeader`.
+
+**Only one `appDrawer` per page.** A second drawer zone is dropped with a warning.
+
+**An overlay nobody opens is dropped.** A `ZoneBottomSheet` reaches mobile *only* through the tap
+that opens it. If no block on the page targets its `zoneKey`, its content is discarded and the
+converter warns:
+
+```
+Overlay zone "cart-sheet" is never opened on route "/home"; nothing triggers it, so its content
+was dropped. Add a ContentButton with destinationType "zone" and zoneKey "cart-sheet".
+```
+
+A `ZoneBottomSheet` that lands in `body[]` directly (no zone wiring at all) emits `unsupported`.
+
+> **Bottom sheet constraint** (repeated from [G2](#g2--tap-is-node-level-never-inside-props)): sheet
+> content renders from a **snapshot** of dataContext at open time, and a trigger inside an open sheet
+> that opens another sheet must set `"replaceCurrent": true`.
+
+---
+
+### 6.29 Timer
+
+Emit `timer` **only** when the page input explicitly defines a redirect or delay. Do not invent a redirect target.
+
+```json
+{
+  "id": "splash-timer-1",
+  "type": "timer",
+  "props": {
+    "durationMs": 3000,
+    "tap": { "type": "navigate", "route": "<page-defined-target>", "navigation_type": "replace" }
+  }
+}
+```
+
+---
+
+### 6.30 RadioGroup
+
+Single-choice vertical radio list — used for payment/shipping/option pickers. Web radio-style blocks map here, not a column of buttons.
+
+```json
+{
+  "id": "checkout-payment-methods",
+  "type": "radioGroup",
+  "props": {
+    "id": "paymentMethod",
+    "itemsPath": "requests.payment-methods.data",
+    "itemLabelPath": "displayName",
+    "itemValuePath": "providerCode",
+    "itemEnabledPath": "selectable",
+    "selectedValuePath": "checkout.selectedPaymentMethod",
+    "showItemAvatar": true,
+    "activeColor": "#1D4ED8",
+    "gap": 10,
+    "emptyHint": "لا توجد وسائل دفع"
+  },
+  "data": { "requestKey": "payment-methods", "requestUrl": "/api/v1/public/payments/methods" },
+  "tap": {
+    "type": "cubitCall",
+    "cubit": "checkout",
+    "method": "selectPaymentMethod",
+    "params": { "providerCode": { "source": "tap", "field": "value" } },
+    "onSuccess": { "type": "closeBottomSheet" }
+  }
+}
+```
+
+
+| Item field        | Notes                                          |
+| ----------------- | ---------------------------------------------- |
+| `badge`           | Small tag on the row (e.g. "المنزل" / "العمل") |
+| `removable: true` | Shows ✕ on the row                             |
+
+
+
+| Group prop     | Notes                                                                                                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onItemRemove` | Action when ✕ is tapped; `dataContext.tap` carries `{ value, index, label }` — e.g. `cubitCall checkout.deleteAddress { addressId: { source: "tap", field: "value" } }` |
+
+### 6.31 Conditional visibility (`visibleWhen`)
+
+Any node may carry `props.visibleWhen`:
+
+```json
+{
+  "type": "container",
+  "props": {
+    "visibleWhen": { "source": "data", "field": "checkout.selectedPaymentMethod", "when": "equals", "value": "cod" }
+  }
+}
+```
+
+
+| Field    | Values                                                  |
+| -------- | ------------------------------------------------------- |
+| `source` | `form` (default) | `pageState` | `data` / `dataContext` |
+| `field`  | form field id / pageState key / dataContext path        |
+| `when`   | `nonEmpty` (default) | `isEmpty` | `equals`             |
+| `value`  | Comparison value for `equals`                           |
+
+
+> For cubitCall param sources, see [G2b](#g2b--cubitcall-param-source-vocabulary) — `visibleWhen` accepts `source: "data"` but cubitCall params do not.
+
+### 6.32 SwitchField
+
+Labeled on/off toggle bound to `FormStateStore` — stores `"true"` / `"false"` strings. Web boolean toggles / checkbox-style single-boolean inputs map here.
+
+```json
+{
+  "id": "address-details-default-toggle",
+  "type": "switchField",
+  "props": {
+    "id": "isDefault",
+    "label": "تعيين كعنوان افتراضي",
+    "activeColor": "#1D4ED8"
+  }
+}
+```
+
+
+| Prop                                              | Notes                                          |
+| ------------------------------------------------- | ---------------------------------------------- |
+| `id` / `controllerId`                             | FormStateStore key; value `"true"` / `"false"` |
+| `label`                                           | Inline-start text (RTL-aware)                  |
+| `value` / `valuePath`                             | Initial state (form store wins)                |
+| `activeColor`, `labelColor`, `fontSize`, `margin` | Styling                                        |
+| `enabled`                                         | Default `true`                                 |
+| `onChanged`                                       | Action dispatched with the new value           |
+
+
+A `source: "form"` cubitCall param reads the `"true"` / `"false"` string (e.g. `isDefault` on `checkout.saveAddress`).
+
+## 6B — Legacy web blocks (not in the mobile block set)
+
+These block types are **absent from [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md)**. Most are also
+legacy on the web side (hidden from the editor palette but still resolvable so old
+`store_config.json` payloads render); the rest are web-only conveniences.
+
+**The converter still handles all of them** — an old merchant payload must not break. But they are
+frozen: no new features, and **no new example may use them**.
+
+| Legacy block | Subsection | Use instead |
+| --- | --- | --- |
+| RichText / ContentHtml | [§ 6.3](#63-richtext--contenthtml) | `ContentParagraph` — plain text only; there is no rich-text block in the mobile set. |
+| Space | [§ 6.4](#64-space) | `Section` padding, or `Group.gap` / `Flex.gap` for space between siblings. |
+| Video (MP4 / HLS) | [§ 6.10](#610-video-mp4--hls) | `VideoEmbed` ([§ 6.11b](#611b-videoembed-mp4--hls)) — it accepts MP4/HLS URLs too. |
+| Hero | [§ 6.12](#612-hero) | `Section` (background image + padding) wrapping `ContentHeading` / `ContentParagraph` / `ContentButton`. |
+| Card | [§ 6.13](#613-card) | `Group` with `backgroundColor` + `padding` + `borderRadius` + `boxShadow`. |
+| Badge | [§ 6.14](#614-badge) | `Group` with `backgroundColor` + `borderRadius` wrapping a `ContentParagraph`. |
+| Stats | [§ 6.21](#621-stats) | `Flex` / `Group` of `ContentHeading` + `ContentParagraph` pairs. |
+| Logos | [§ 6.22](#622-logos) | `ImageGallery` in `grid` mode. |
+| ContactForm | [§ 6.23](#623-contactform) | `ContentInput` fields inside a `Section` ([§ 6.34](#634-contentinput)) — that path also builds the `form` wrapper. |
+| NavMenu | [§ 6.24](#624-navmenu) | `ZoneDrawer` `slot[]` of `ContentLink` blocks ([§ 6.38](#638-zonedrawer--zonebottomsheet)). |
+| Sidebar | [§ 6.26](#626-sidebar) | `Group` with `direction: "column"`. |
+| Template | [§ 6.27](#627-template) | Nothing — the wrapper has no purpose in the mobile set; author the children directly. |
+| Checkout address flow | [§ 6.33](#633-checkout-address-flow) | No mobile-set equivalent. Checkout is a native multi-route flow; the JSON reaches it through `ContentButton` `buttonAction: "makeOrder"` ([§ 6.5](#65-button--contentbutton)). |
+
+> `SiteHeader` / `SiteFooter` / `SiteDrawerShell` / `SideDrawer` / `ZonePopup` are also outside the
+> block set but are **site zones**, not body blocks — their ingest rules stay live in
+> [§ 7](#7-page-envelope-structure) and [§ 10](#10-unsupported-blocks).
+
+---
+
+### 6.3 RichText / ContentHtml
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `ContentParagraph` — plain text only; there is no rich-text block in the mobile set.
+
+**Web input:**
+
+```json
+{ "type": "RichText", "props": { "richtext": "<h2>عن المتجر</h2><p>نحن متجر متخصص...</p>" } }
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "richtext-1",
+  "type": "richtext",
+  "props": { "value": "<h2>عن المتجر</h2><p>نحن متجر متخصص...</p>" }
+}
+```
+
+The HTML is passed through as-is. The mobile renderer strips tags for display.
+
+---
+
+### 6.4 Space
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `Section` padding, or `Group.gap` / `Flex.gap` for space between siblings.
+
+**Web input:**
+
+```json
+{ "type": "Space", "props": { "size": "theme-40", "direction": "vertical" } }
+```
+
+**Mobile output:**
+
+```json
+{ "id": "spacer-1", "type": "sizedBox", "props": { "height": 40 } }
+```
+
+- `direction: "horizontal"` → emits `"width"` instead of `"height"`.
+- Default direction is `vertical`.
+
+---
+
+### 6.10 Video (MP4 / HLS)
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `VideoEmbed` ([§ 6.11b](#611b-videoembed-mp4--hls)) — it accepts MP4/HLS URLs too.
+
+`Video` blocks (direct MP4/HLS src) are transformed to `videoPlayer`.
+
+**Web input:**
+
+```json
+{
+  "type": "Video",
+  "props": {
+    "src": "https://example.com/promo.mp4",
+    "controls": "on",
+    "autoPlay": "off",
+    "aspectRatio": "16:9"
+  }
+}
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "video-wrapper-1",
+  "type": "container",
+  "props": { "aspectRatio": 1.777 },
+  "child": {
+    "id": "video-2",
+    "type": "videoPlayer",
+    "props": {
+      "url": "https://example.com/promo.mp4",
+      "showControls": true,
+      "autoplay": false
+    }
+  }
+}
+```
+
+When no `aspectRatio` is set, the `container` wrapper is omitted and `videoPlayer` is emitted directly.
+
+> `loop` and `muted` are **not** read by the engine — do not emit them.
+
+---
+
+### 6.12 Hero
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `Section` (background image + padding) wrapping `ContentHeading` / `ContentParagraph` / `ContentButton`.
+
+#### Background image mode → `stack`
+
+**Web input:**
+
+```json
+{
+  "type": "Hero",
+  "props": {
+    "title": "ابدأ التسوق",
+    "description": "أفضل المنتجات بأفضل الأسعار",
+    "align": "center",
+    "padding": "40px",
+    "image": { "url": "https://example.com/hero.jpg", "mode": "background" },
+    "buttons": [
+      { "label": "تسوق الآن", "variant": "primary", "href": "/products" }
+    ]
+  }
+}
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "hero-stack-1",
+  "type": "stack",
+  "props": { "fit": "loose" },
+  "children": [
+    {
+      "id": "hero-bg-2",
+      "type": "image",
+      "props": { "url": "https://example.com/hero.jpg", "source": "network", "fit": "cover", "stackLayer": "fill" }
+    },
+    {
+      "id": "hero-col-3",
+      "type": "column",
+      "props": { "mainAxisAlignment": "center", "crossAxisAlignment": "center", "gap": 16, "padding": 40 },
+      "children": [
+        { "id": "hero-title-4", "type": "text", "props": { "value": "ابدأ التسوق", "fontSize": 28, "fontWeight": "bold", "textAlign": "center" } },
+        { "id": "hero-desc-5", "type": "text", "props": { "value": "أفضل المنتجات بأفضل الأسعار", "fontSize": 16, "textAlign": "center" } },
+        {
+          "id": "hero-buttons-6",
+          "type": "row",
+          "props": { "mainAxisAlignment": "center", "crossAxisAlignment": "center", "gap": 12 },
+          "children": [
+            {
+              "id": "hero-btn-7",
+              "type": "button",
+              "props": { "label": "تسوق الآن", "variant": "elevated", "height": 48 },
+              "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`**stack` child positioning** — per-child props on each child node's `props` (not on the `stack` itself):
+
+
+| Prop               | Notes                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| `stackLayer`       | `"fill"` (index 0 default) | `"positioned"` (default for others) |
+| `stackAlign`       | alignment when positioned (default `"bottomCenter"`)             |
+| `stackInsetBottom` | fixed px from bottom — preferred for footers/docks               |
+| `stackWidthFactor` | width as fraction of stack (`1` = full width)                    |
+
+
+Without these, every non-background child lands at the default bottom-center position. Background images should use `stackLayer: "fill"`.
+
+#### No background image → `container` + `column`
+
+When no background image is present, Hero emits:
+
+```json
+{
+  "id": "hero-container-1",
+  "type": "container",
+  "props": { "padding": { "top": 80, "bottom": 80, "left": 24, "right": 24 } },
+  "child": {
+    "id": "hero-col-2",
+    "type": "column",
+    "props": { "crossAxisAlignment": "center", "mainAxisAlignment": "center", "gap": 16 },
+    "children": [ ... ]
+  }
+}
+```
+
+---
+
+### 6.13 Card
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `Group` with `backgroundColor` + `padding` + `borderRadius` + `boxShadow`.
+
+**Web input:**
+
+```json
+{
+  "type": "Card",
+  "props": {
+    "title": "شحن سريع",
+    "description": "توصيل خلال يومي عمل",
+    "icon": "truck",
+    "mode": "card"
+  }
+}
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "card-1",
+  "type": "card",
+  "props": { "elevation": 2, "borderRadius": 8 },
+  "child": {
+    "id": "card-body-2",
+    "type": "column",
+    "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "start", "gap": 8, "padding": 16 },
+    "children": [
+      { "id": "card-icon-3", "type": "icon", "props": { "name": "local_shipping", "size": 32, "color": "#0b78c5" } },
+      { "id": "card-title-4", "type": "text", "props": { "value": "شحن سريع", "fontSize": 16, "fontWeight": "bold" } },
+      { "id": "card-desc-5", "type": "text", "props": { "value": "توصيل خلال يومي عمل", "fontSize": 14, "color": "#64748b" } }
+    ]
+  }
+}
+```
+
+`**mode` → `elevation` map:**
+
+
+| Web `mode` / `variant` | Mobile `elevation` |
+| ---------------------- | ------------------ |
+| `card`                 | `2`                |
+| `flat`                 | `0`                |
+| `outlined`             | `0`                |
+| `elevated`             | `4`                |
+| `default`              | `1`                |
+
+
+---
+
+### 6.14 Badge
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `Group` with `backgroundColor` + `borderRadius` wrapping a `ContentParagraph`.
+
+**Web input:**
+
+```json
+{ "type": "Badge", "props": { "label": "-20%", "variant": "discount", "size": "md" } }
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "badge-1",
+  "type": "container",
+  "props": { "padding": { "left": 8, "right": 8, "top": 4, "bottom": 4 }, "color": "#FEE2E2", "borderRadius": 9999 },
+  "child": {
+    "id": "badge-label-2",
+    "type": "text",
+    "props": { "value": "-20%", "fontSize": 14, "fontWeight": "bold", "color": "#DC2626" }
+  }
+}
+```
+
+**Badge variants and colors:**
+
+
+| Variant            | Background | Foreground |
+| ------------------ | ---------- | ---------- |
+| `discount`         | `#FEE2E2`  | `#DC2626`  |
+| `inStock`          | `#DCFCE7`  | `#16A34A`  |
+| `outOfStock`       | `#F3F4F6`  | `#6B7280`  |
+| `custom` / *other* | `#EBF5FF`  | `#2563EB`  |
+
+
+**Font size by `size`:** `sm` → 12, `md` → 14, `lg` → 16.
 
 ---
 
 ### 6.21 Stats
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `Flex` / `Group` of `ContentHeading` + `ContentParagraph` pairs.
 
 **Web input:**
 
@@ -1483,6 +2185,12 @@ When `backgroundImage` is present on a `Section`:
 
 ### 6.22 Logos
 
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `ImageGallery` in `grid` mode.
+
 **Mobile output:**
 
 ```json
@@ -1499,6 +2207,12 @@ When `backgroundImage` is present on a `Section`:
 ---
 
 ### 6.23 ContactForm
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `ContentInput` fields inside a `Section` ([§ 6.34](#634-contentinput)) — that path also builds the `form` wrapper.
 
 **Mobile output:**
 
@@ -1573,6 +2287,12 @@ When `backgroundImage` is present on a `Section`:
 
 ### 6.24 NavMenu
 
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `ZoneDrawer` `slot[]` of `ContentLink` blocks ([§ 6.38](#638-zonedrawer--zonebottomsheet)).
+
 **Mobile output:**
 
 ```json
@@ -1593,68 +2313,13 @@ When `backgroundImage` is present on a `Section`:
 
 ---
 
-### 6.25 Testimonials
-
-#### Grid layout (default)
-
-```json
-{
-  "id": "testimonials-grid-1",
-  "type": "column",
-  "props": { "crossAxisAlignment": "stretch", "mainAxisAlignment": "start", "gap": 16 },
-  "children": [
-    {
-      "id": "tm-row-2",
-      "type": "row",
-      "props": { "mainAxisAlignment": "spaceBetween", "crossAxisAlignment": "stretch", "gap": 16 },
-      "children": [
-        {
-          "id": "tm-row-cell-3",
-          "type": "container",
-          "props": { "expand": true, "expandAxis": "horizontal" },
-          "child": {
-            "id": "testimonial-4",
-            "type": "card",
-            "props": { "elevation": 1, "borderRadius": 12 },
-            "child": {
-              "id": "tm-body-5",
-              "type": "column",
-              "props": { "crossAxisAlignment": "start", "mainAxisAlignment": "start", "gap": 8 },
-              "children": [
-                { "id": "tm-rating-6", "type": "text", "props": { "value": "★★★★★", "fontSize": 16, "color": "#f59e0b" } },
-                { "id": "tm-quote-7", "type": "text", "props": { "value": "منتج رائع!", "fontSize": 14 } },
-                { "id": "tm-name-8", "type": "text", "props": { "value": "سارة", "fontSize": 14, "fontWeight": "bold" } }
-              ]
-            }
-          }
-        }
-      ]
-    }
-  ]
-}
-```
-
-#### Carousel layout (`layoutVariant: "carousel"`)
-
-```json
-{
-  "id": "testimonials-carousel-1",
-  "type": "listView",
-  "props": { "scrollDirection": "horizontal" },
-  "children": [
-    {
-      "id": "tm-carousel-cell-2",
-      "type": "container",
-      "props": { "width": 280 },
-      "child": { ... }
-    }
-  ]
-}
-```
-
----
-
 ### 6.26 Sidebar
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** `Group` with `direction: "column"`.
 
 Sidebar is emitted as an inline `column` (the `dock` prop is ignored with a warning).
 
@@ -1671,131 +2336,23 @@ Sidebar is emitted as an inline `column` (the `dock` prop is ignored with a warn
 
 ### 6.27 Template
 
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** Nothing — the wrapper has no purpose in the mobile set; author the children directly.
+
 `Template` is flattened: children are emitted directly. The wrapper node is discarded. When there is exactly one child, that child is returned unwrapped.
 
 ---
 
-### 6.28 Blank
-
-`Blank` blocks are **omitted** entirely (return `null`). No node is emitted.
-
----
-
-### 6.29 Timer
-
-Emit `timer` **only** when the page input explicitly defines a redirect or delay. Do not invent a redirect target.
-
-```json
-{
-  "id": "splash-timer-1",
-  "type": "timer",
-  "props": {
-    "durationMs": 3000,
-    "tap": { "type": "navigate", "route": "<page-defined-target>", "navigation_type": "replace" }
-  }
-}
-```
-
----
-
-### 6.30 RadioGroup
-
-Single-choice vertical radio list — used for payment/shipping/option pickers. Web radio-style blocks map here, not a column of buttons.
-
-```json
-{
-  "id": "checkout-payment-methods",
-  "type": "radioGroup",
-  "props": {
-    "id": "paymentMethod",
-    "itemsPath": "requests.payment-methods.data",
-    "itemLabelPath": "displayName",
-    "itemValuePath": "providerCode",
-    "itemEnabledPath": "selectable",
-    "selectedValuePath": "checkout.selectedPaymentMethod",
-    "showItemAvatar": true,
-    "activeColor": "#1D4ED8",
-    "gap": 10,
-    "emptyHint": "لا توجد وسائل دفع"
-  },
-  "data": { "requestKey": "payment-methods", "requestUrl": "/api/v1/public/payments/methods" },
-  "tap": {
-    "type": "cubitCall",
-    "cubit": "checkout",
-    "method": "selectPaymentMethod",
-    "params": { "providerCode": { "source": "tap", "field": "value" } },
-    "onSuccess": { "type": "closeBottomSheet" }
-  }
-}
-```
-
-
-| Item field        | Notes                                          |
-| ----------------- | ---------------------------------------------- |
-| `badge`           | Small tag on the row (e.g. "المنزل" / "العمل") |
-| `removable: true` | Shows ✕ on the row                             |
-
-
-
-| Group prop     | Notes                                                                                                                                                                   |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `onItemRemove` | Action when ✕ is tapped; `dataContext.tap` carries `{ value, index, label }` — e.g. `cubitCall checkout.deleteAddress { addressId: { source: "tap", field: "value" } }` |
-
-
-### 6.31 Conditional visibility (`visibleWhen`)
-
-Any node may carry `props.visibleWhen`:
-
-```json
-{
-  "type": "container",
-  "props": {
-    "visibleWhen": { "source": "data", "field": "checkout.selectedPaymentMethod", "when": "equals", "value": "cod" }
-  }
-}
-```
-
-
-| Field    | Values                                                  |
-| -------- | ------------------------------------------------------- |
-| `source` | `form` (default) | `pageState` | `data` / `dataContext` |
-| `field`  | form field id / pageState key / dataContext path        |
-| `when`   | `nonEmpty` (default) | `isEmpty` | `equals`             |
-| `value`  | Comparison value for `equals`                           |
-
-
-> For cubitCall param sources, see [G2b](#g2b--cubitcall-param-source-vocabulary) — `visibleWhen` accepts `source: "data"` but cubitCall params do not.
-
-### 6.32 SwitchField
-
-Labeled on/off toggle bound to `FormStateStore` — stores `"true"` / `"false"` strings. Web boolean toggles / checkbox-style single-boolean inputs map here.
-
-```json
-{
-  "id": "address-details-default-toggle",
-  "type": "switchField",
-  "props": {
-    "id": "isDefault",
-    "label": "تعيين كعنوان افتراضي",
-    "activeColor": "#1D4ED8"
-  }
-}
-```
-
-
-| Prop                                              | Notes                                          |
-| ------------------------------------------------- | ---------------------------------------------- |
-| `id` / `controllerId`                             | FormStateStore key; value `"true"` / `"false"` |
-| `label`                                           | Inline-start text (RTL-aware)                  |
-| `value` / `valuePath`                             | Initial state (form store wins)                |
-| `activeColor`, `labelColor`, `fontSize`, `margin` | Styling                                        |
-| `enabled`                                         | Default `true`                                 |
-| `onChanged`                                       | Action dispatched with the new value           |
-
-
-A `source: "form"` cubitCall param reads the `"true"` / `"false"` string (e.g. `isDefault` on `checkout.saveAddress`).
-
 ### 6.33 Checkout address flow
+
+> **LEGACY — not in the mobile block set.** This block type is absent from
+> [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md); the mobile Site JSON registry will not produce it.
+> The mapping below is kept because merchant payloads predating the mobile registry still contain it.
+> **Do not author new examples with it** — use the replacement noted under each heading.
+> **Use instead:** No mobile-set equivalent. Checkout is a native multi-route flow; the JSON reaches it through `ContentButton` `buttonAction: "makeOrder"` ([§ 6.5](#65-button--contentbutton)).
 
 New checkout `cubitCall` methods the converter may target:
 
@@ -2047,7 +2604,7 @@ Emitted when a `SiteDrawerShell`, `ZoneDrawer`, or `SideDrawer` block is found i
 | -------------------------- | ---------------------------------------------------------------------------- |
 | `language: "ar"`           | Prefers `labelAr`, `titleAr`, `textAr`, `messageAr` over English equivalents |
 | `direction: "rtl"`         | Default `textAlign: "right"` on all text nodes                               |
-| Phone / email / OTP fields | Always `textDirection: "ltr"`                                                |
+| Phone / email / password / OTP fields | Always `textDirection: "ltr"` — Latin-keyed regardless of app direction |
 | `language: "ar"`           | Font family → `"Tajawal"` (overrides `bodyFont`)                             |
 
 
@@ -2245,9 +2802,9 @@ So `product.title` is `item.name` inside a cart row, and `dataContext.requests.p
 
 Static fallback values remain when `fallbackToStatic: true` (editor preview only; mobile uses paths at runtime).
 
-### 9.6 Section presets are **not** a converter concern
+### 9.6 Section presets are **mostly** not a converter concern
 
-`metadata.preset`, legacy `sectionKind`, `collection` and `cartSlotItems` are **ignored**. Presets exist only to make web authoring easier — inserting several blocks at once with binding pre-wired. By the time JSON reaches the converter the preset has already been expanded into ordinary blocks, so every `Section` converts the same way and the commerce behaviour comes from the blocks themselves:
+`metadata.preset`, legacy `sectionKind`, `collection` and `cartSlotItems` are **ignored** for every preset whose content the web editor has already expanded into ordinary blocks — presets exist to make authoring easier (inserting several blocks at once with binding pre-wired), so those Sections all convert the same way and the commerce behaviour comes from the blocks themselves:
 
 
 | Block                              | Emits                                                                                               |
@@ -2257,14 +2814,76 @@ Static fallback values remain when `fallbackToStatic: true` (editor preview only
 | Additional `cartLineId` Groups     | Dropped with a warning — they are the same row repeated; one `listView` already renders the whole cart |
 | `ContentButton` + `makeOrder`      | Hoisted to `pages[].footer` as a sticky CTA                                                          |
 | `ContentButton` + `cartQtyIncrease` / `cartQtyDecrease`, `CartQuantity` | `cubitCall cart.updateQuantity` (§6.5)                           |
+| `Group` card template in a `products-grid` / `products-page` Section | `gridView` + `itemBuilder.repeat` over the collection request — the one preset the converter does read (§9.7) |
 
 
-A Section carrying a preset id but **no** expanded content converts to an empty container — there are no blocks to convert. Conversion is verified preset-agnostic by test *"ignores metadata.preset / sectionKind"*: the same blocks with and without preset metadata produce byte-identical output (ids aside).
+A Section carrying a preset id but **no** content and **no** `cardTemplate` converts to an empty container — there are no blocks to convert. Conversion is verified preset-agnostic by test *"ignores metadata.preset / sectionKind once the preset content is expanded"*: the same blocks with and without preset metadata produce byte-identical output (ids aside).
+
+### 9.7 Products Grid / Products Page: the unexpanded card template
+
+The one exception to §9.6. `products-grid` and `products-page` Sections are **not** expanded on the web side: `content` holds exactly **one** card-template `Group` with `product: null`, and the web repeater clones it per product at render time ([`docs/BLOCKS.md` § *Section presets: the one-template-card contract*](docs/BLOCKS.md#section-presets-the-one-template-card-contract) — that contract is only written up in the wider web reference, not in `BLOCKS-MOBILE.md`). Mobile has the same primitive, so the template maps onto a `gridView` + `itemBuilder.repeat`.
+
+**Trigger** — all of these must hold, otherwise the Section converts as a plain Section (§9.6):
+
+- `metadata.preset` (or `sectionKind`) is `"products-grid"` or `"products-page"`
+- `content` is exactly one block — or `content` is empty and `cardTemplate` holds exactly one
+- that block is a `Group` with no `product` picker ref
+
+**Mobile output:**
+
+```json
+{
+  "id": "products-grid-7",
+  "type": "gridView",
+  "props": {
+    "crossAxisCount": 2,
+    "mainAxisSpacing": 16,
+    "crossAxisSpacing": 16,
+    "childAspectRatio": 0.75,
+    "enableInnerScroll": false,
+    "requestKey": "product-list",
+    "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=20",
+    "emptyMessage": "لا توجد منتجات",
+    "errorMessage": "حدث خطأ"
+  },
+  "itemBuilder": {
+    "type": "repeat",
+    "source": "dataContext.requests.product-list.data",
+    "item": { "…the template Group, children bound to item.* per §9.5…" }
+  }
+}
+```
+
+| Web | Mobile |
+| --- | --- |
+| `columnsMobile` (else `columns`, else `2`) | `crossAxisCount` |
+| `gridGap` | `mainAxisSpacing` / `crossAxisSpacing` |
+| `collection.id`, else `collection.slug` (`products-grid`) | collection segment of `requestUrl` (§9.1 URL rules, size capped at 20) |
+| no collection picker (`products-page`) | `/api/v1/public/products?page=0&size=20` — the search / category / pagination controls sit in the wrapper Section and filter at runtime |
+| template children `valueContext` | `valuePath` / `urlPath` on `item.*` (§9.5 binding table) |
+
+The Section's own padding / background still wrap the grid, exactly as for a plain Section — only the children wrapper is replaced.
 
 
 ---
 
 ## 10. Unsupported Blocks
+
+**Mobile block set** — blocks from [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md) that do *not*
+produce a straightforward node:
+
+
+| Web block                       | Mobile output                                                                        | Note                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Chip`                          | `null` (skipped) + warning                                                           | Renders a runtime array (`listValueContext`) with no chip-list primitive and no valueContext path mapping. [§ 6.37](#637-chip) |
+| `ButtonGroup` (`static`)        | `row` of `button` nodes; the `defaultSelectedValue` item gets `variant: "filled"`     | Selection state is **not** tracked on mobile — each button just runs its own destination. [§ 6.36](#636-buttongroup)           |
+| `ButtonGroup` (`categories` / `pagination`) | `unsupported` + warning                                                  | Items are generated from runtime store data.                                                                                  |
+| `Blank`                         | `null` (omitted entirely)                                                            | [§ 6.28](#628-blank)                                                                                                          |
+| `ZoneDrawer`                    | Page-level `appDrawer` from `slot[]`                                                 | Site zone, never in `body[]`. [§ 6.38](#638-zonedrawer--zonebottomsheet)                                                       |
+| `ZoneBottomSheet`               | `openBottomSheet` when triggered by `ContentButton` / `ButtonGroup` `destinationType: "zone"` | Otherwise dropped (with a warning) or `unsupported`                                                                   |
+
+
+**LEGACY / web-only** — outside the mobile block set ([§ 6B](#6b--legacy-web-blocks-not-in-the-mobile-block-set)):
 
 
 | Web block                       | Mobile output                                                                        | Note                                                                                                                          |
@@ -2272,20 +2891,16 @@ A Section carrying a preset id but **no** expanded content converts to an empty 
 | `CategoryListMenu`              | `{ "type": "unsupported", "props": { "blockType": "CategoryListMenu" } }` + warning  | No static decomposition. If this merchant has a categories screen, wire a navigate button manually; otherwise omit the block. |
 | `ProductSearchMenu`             | `{ "type": "unsupported", "props": { "blockType": "ProductSearchMenu" } }` + warning | Needs cubit wiring. If this merchant has a search screen, wire manually; otherwise omit.                                      |
 | `ProductVariants`               | `{ "type": "unsupported", "props": { "blockType": "ProductVariants" } }` + warning   | Variant matrix selection needs cubit state the engine has no primitive for.                                                   |
-| `Chip`                          | `null` (skipped) + warning                                                           | Renders a runtime array (`listValueContext`) with no chip-list primitive and no valueContext path mapping.                    |
-| `ButtonGroup` (`static`)        | `row` of `button` nodes; the `defaultSelectedValue` item gets `variant: "filled"`     | Selection state is **not** tracked on mobile — each button just runs its own destination.                                     |
-| `ButtonGroup` (`categories` / `pagination`) | `unsupported` + warning                                                  | Items are generated from runtime store data.                                                                                  |
 | `SideDrawer`                    | Handled as `SiteDrawerShell` (generates `appDrawer`)                                 |                                                                                                                               |
-| `Blank`                         | `null` (omitted entirely)                                                            |                                                                                                                               |
-| `SiteHeader`                    | Not in `body[]` — used to build `appBar`                                             |                                                                                                                               |
-| `SiteFooter`                    | Page-level `footer` key (not in `body[]`)                                            |                                                                                                                               |
-| `ZoneDrawer`                    | Page-level `appDrawer` from `slot[]`                                                 |                                                                                                                               |
-| `ZonePopup` / `ZoneBottomSheet` | `openBottomSheet` when triggered by `ContentButton` `destinationType: "zone"`        | Otherwise `unsupported` + warning                                                                                             |
-| `LoginButton`                   | Navigate stub to `/auth/login` or omitted when appBar handles auth                   |                                                                                                                               |
+| `SiteHeader`                    | Not in `body[]` — used to build `appBar`                                             | Site zone; ingest still live ([§ 7](#7-page-envelope-structure))                                                               |
+| `SiteFooter`                    | Page-level `footer` key (not in `body[]`)                                            | Site zone; ingest still live                                                                                                  |
+| `ZonePopup`                     | `openBottomSheet` when triggered by `destinationType: "zone"`                        | Otherwise `unsupported` + warning. Replaced by `ZoneBottomSheet` in the mobile set                                            |
+| `LoginButton`                   | Navigate stub to `/auth/login` or omitted when appBar handles auth                   | Replaced by `ContentButton` `buttonAction: "login"` ([§ 6.34](#634-contentinput))                                              |
 | `CartIconButton`                | Covered by `appBar.showCartIcon` when header present                                 |                                                                                                                               |
-| `ContentHtml`                   | → `richtext`, see §6.3                                                               |                                                                                                                               |
+| `ContentHtml`                   | → `richtext`, see [§ 6.3](#63-richtext--contenthtml)                                 |                                                                                                                               |
 | `SiteDrawerShell`               | Not in `body[]` — emitted as `appDrawer` on the page node                            |                                                                                                                               |
 | `Template`                      | Flattened (wrapper discarded)                                                        |                                                                                                                               |
+| `CartList`                      | `null` (skipped) + warning                                                           | A web **preset**, not a block — must be expanded into a `cartLineId` `Group` before export                                    |
 
 
 **Unknown block types with children** → wrapped in a `container` + `column` with the children converted; a warning is emitted.  
@@ -2305,6 +2920,9 @@ The converter accumulates warnings and returns them in `{ success: true, output:
 - `"SiteHeader.rightSlot blocks [<types>] have no appBar equivalent…"`
 - `"ContentLink icon \"<name>\" dropped; the engine `button` has no icon prop"`
 - `"ContentInput \"<id>\" uses inputAction \"search_products\"…"`
+- `"ContentSwitch \"<id>\" uses switchAction \"<action>\"; the mobile field is emitted as a plain switchField without store wiring…"`
+- `"ContentSwitch \"<id>\" helperText dropped; the engine switchField has no helper-text prop"`
+- `"Overlay zone \"<key>\" is never opened on route \"<route>\"; nothing triggers it, so its content was dropped…"`
 - `"ZonePopup \"<key>\" is inactive (is_active: false); overlay skipped"`
 - `"Multiple drawer zones found; \"<key>\" dropped — mobile supports one appDrawer per page"`
 - `"Unknown block type \"<X>\"; converted children only"`
@@ -2342,6 +2960,10 @@ Use this checklist before sending converter output to the engine.
 - `form` uses `props.formId` (production also mirrors it as `id`; both accepted, renderer reads `formId` first)
 - Submit button `tap.formId` matches the form's `formId`
 - `form` uses `child` OR `children`, not both
+- Every `textFormField` / `switchField` sits inside a `form` — a field with no enclosing form cannot be submitted
+- Auth submit (`cubitCall auth.login`) carries `requireValidForm: true` + `formId` + `source: "form"` params
+- `switchField` initial state is the **string** `"true"` / `"false"`, never a boolean
+- `textDirection: "ltr"` on email, phone, password and OTP fields
 
 ### Actions
 
@@ -2407,55 +3029,432 @@ These are by design — the mobile team should not expect different output for t
 
 ---
 
-## 13. Block Convertibility Matrix (BLOCKS.md)
+## 13. Block Convertibility Matrix
 
-### Cannot convert automatically
+Scoped to the **mobile block set** ([`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md)). All 22 types are
+listed; nothing is omitted.
 
-
-| Block                           | Output                                                              |
-| ------------------------------- | ------------------------------------------------------------------- |
-| `CategoryListMenu`              | `unsupported` + warning                                             |
-| `ProductSearchMenu`             | `unsupported` + warning                                             |
-| `ProductVariants`               | `unsupported` + warning                                             |
-| `Chip`                          | omitted + warning (runtime array, no chip primitive)                |
-| `ButtonGroup` (bound modes)     | `unsupported` + warning                                             |
-| `SideDrawer`                    | Handled as `SiteDrawerShell` (generates `appDrawer`)                |
-| `Blank`                         | omitted                                                             |
-| `ZonePopup` / `ZoneBottomSheet` | `openBottomSheet` only when zone trigger exists; else `unsupported` |
+### Fully convertible (mobile block set)
 
 
-### Partial / lossy
+| Block              | Mobile output                                | Section |
+| ------------------ | -------------------------------------------- | ------- |
+| `Accordion`        | `column` of `expansionTile`                  | [6.15](#615-accordion) |
+| `ContentButton`    | `button` + node-level `tap`                  | [6.5](#65-button--contentbutton) |
+| `ContentDivider`   | `divider`                                    | [6.9](#69-divider--contentdivider) |
+| `ContentHeading`   | `text`                                       | [6.2](#62-heading--contentheading) |
+| `ContentIcon`      | `icon`                                       | [6.7](#67-icon--contenticon) |
+| `ContentImage`     | `image`                                      | [6.8](#68-image--contentimage) |
+| `ContentInput`     | `textFormField` (+ `form` for auth sections)  | [6.34](#634-contentinput) |
+| `ContentLink`      | `button` `variant: "text"`                    | [6.6](#66-link) |
+| `ContentParagraph` | `text`                                       | [6.1](#61-text--contentparagraph) |
+| `ContentSwitch`    | `switchField`                                 | [6.35](#635-contentswitch) |
+| `Flex`             | `row` / `column`                              | [6.18](#618-group--flex) |
+| `Grid`             | `gridView`                                    | [6.19](#619-grid-layout) |
+| `Group`            | `row` / `column`, wrapped in `container` when styled | [6.18](#618-group--flex) |
+| `ImageGallery`     | `imageSlider` (slider) / `gridView` (grid)     | [6.16](#616-imagegallery-slider-mode) |
+| `Section`          | `container` + `column` / `gridView` / `stack`  | [6.17](#617-section) |
+| `Testimonials`     | `column` of `card` (inline source only)        | [6.25](#625-testimonials) |
+| `VideoEmbed`       | `image` + `openUrl` (YouTube) / `videoPlayer` (MP4-HLS) | [6.11](#611-videoembed-youtube) |
+| `ZoneDrawer`       | page-level `appDrawer`                         | [6.38](#638-zonedrawer--zonebottomsheet) |
 
 
-| Block / pattern                | Gap                                                |
-| ------------------------------ | -------------------------------------------------- |
-| `Group` + `cartLineId`         | Web localStorage row → one `listView` over the `cart.items` cubit |
-| `Group` + `product`            | Per-card request on a `container` (§9.5 open question) |
-| `CartSection` (legacy)         | Generic listView template                          |
-| `CheckoutForm`                 | Multi-route checkout flow                          |
-| `Testimonials` CMS source      | Inline fallback only                               |
-| `layout.hideOnMobile`          | Omitted or `visibleWhen` when convertible          |
+### Cannot convert automatically (mobile block set)
 
 
-### Partial / lossy (block props with no engine equivalent)
+| Block                                       | Output                                               | Reason |
+| ------------------------------------------- | ---------------------------------------------------- | ------ |
+| `Chip`                                      | omitted + warning                                    | Runtime array via `listValueContext`; no chip-list primitive and no array path in the binding table |
+| `ButtonGroup` (`categories` / `pagination`) | `unsupported` + warning                              | Items generated from runtime store data |
+| `Blank`                                     | omitted                                              | Dev-only placeholder |
+| `ZoneBottomSheet` with no trigger           | dropped + warning (or `unsupported` in `body[]`)     | Reaches mobile only through the tap that opens it |
 
 
-| Block           | Dropped props                                                                     |
-| --------------- | --------------------------------------------------------------------------------- |
-| `ContentButton` | `textColor`, `radius`, `align` (engine `button` only accepts `color`)             |
-| `ContentLink`   | `icon` / `iconPosition`, `hoverEffect`, `hoverColor`, `fontSize`                  |
-| `ContentInput`  | `debounceMs`, `inputAction` wiring                                                |
-| `SiteHeader`    | `layoutMode`, `menuAlign`, `navStyle`, `brandHref`; `rightSlot` beyond the cart icon |
-| `SiteFooter`    | `variant` (commerce / default layout)                                             |
-| `Section`       | `anchorId`, `maxWidth`, `theme`                                                   |
-| `Group`         | `wrap`, `backgroundOverlayColor`                                                  |
-| `Accordion`     | `backgroundColor`, `textColor`                                                    |
+### Partial / lossy (mobile block set)
 
 
-### Fully convertible
+| Block / pattern                | Gap                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| `ButtonGroup` (`static`)       | Converts, but **selection state is not tracked** — a row of independent buttons |
+| `ContentInput` `inputAction`   | Store binding (`search_products`, `filter_*`, `profile_*`, `address_*`) not wired |
+| `ContentSwitch` `switchAction` | Store binding (`filter_in_stock_only`, `marketing_*`, `address_is_default`) not wired |
+| `Group` + `cartLineId`         | Web localStorage row → one `listView` over the `cart.items` cubit          |
+| `Group` + `product`            | Per-card request on a `container` ([§ 9.5](#95-valuecontext-binding-group--content-blocks) open question) |
+| `Testimonials` CMS source      | Inline fallback only                                                      |
+| `layout.hideOnMobile`          | Block omitted (or `visibleWhen` when convertible)                         |
+| `Group` `wrap: "wrap"`         | No native flex-wrap; approximated with a warning                           |
 
-Accordion, Button, ButtonGroup (static), Card, CartItem, CartQuantity, ContactForm, ContentButton, ContentDivider, ContentHeading, ContentIcon, ContentImage, ContentInput, ContentLink, ContentParagraph, Flex, Grid, Group, RowGroup, Heading, Hero, ImageGallery, Logos, NavMenu, OrderHistory, ProductImageCarousel (bound), RichText, Section, Space, Stats, Template, Testimonials (inline), Text, VideoEmbed, Wishlist, ZoneDrawer, ZonePopup / ZoneBottomSheet (when triggered), SiteHeader, SiteFooter, SiteDrawerShell, ProductsGrid (legacy), ProductCard (legacy).
+
+### Partial / lossy — props with no engine equivalent
+
+
+| Block            | Dropped props                                                                     |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `ContentButton`  | `textColor`, `radius`, `align` (engine `button` accepts only `color`)              |
+| `ContentLink`    | `icon` / `iconPosition`, `hoverEffect`, `hoverColor`, `fontSize`                  |
+| `ContentInput`   | `debounceMs`, `inputAction`, `valueContext`                                       |
+| `ContentSwitch`  | `helperText`, `labelPosition`, `switchAction`, `checkedValueContext`              |
+| `ContentParagraph` / `ContentHeading` | `fontFamily`, `lineHeight`                                   |
+| `ButtonGroup`    | `*Style.textColor`, `*Style.radius`, `value` / `defaultSelectedValue` semantics    |
+| `Section`        | `anchorId`, `maxWidth`, `theme`                                                   |
+| `Group`          | `wrap`, `backgroundOverlayColor`                                                  |
+| `Accordion`      | `backgroundColor`, `textColor`                                                    |
+| `ImageGallery`   | `showArrows`, `slidesPerView`, `gridRows`                                         |
+| `ZoneDrawer` / `ZoneBottomSheet` | `is_mobile_only`, `overlay`, `showCloseButton`, `maxHeight` (engine-owned chrome) |
+
+
+### LEGACY blocks
+
+Outside the mobile block set; converter behaviour retained for old payloads only —
+[§ 6B](#6b--legacy-web-blocks-not-in-the-mobile-block-set) and [§ 10](#10-unsupported-blocks).
+
+*Cannot convert:* `CategoryListMenu`, `ProductSearchMenu`, `ProductVariants`, `CartList`.
+*Handled elsewhere:* `SiteHeader`, `SiteFooter`, `SiteDrawerShell`, `SideDrawer`, `ZonePopup`, `CartIconButton`, `LoginButton`, `Template`.
+*Convert but frozen:* `Text`, `Heading`, `RichText` / `ContentHtml`, `Space`, `Button`, `Link`, `Icon`, `Image`, `Video`, `Hero`, `Card`, `Badge`, `Stats`, `Logos`, `ContactForm`, `NavMenu`, `Sidebar`, `RowGroup`, `CartItem`, `CartQuantity`, `CartSection`, `CartSummary`, `CheckoutForm`, `CheckoutSummary`, `OrderHistory` / `OrderList`, `OrderDetails`, `Wishlist`, `ProductsGrid`, `ProductCard`, `ProductCarousel`, `ProductImage`, `ProductInfo`, `ProductDetails`, `ProductImageCarousel`, `TestimonialCard`, `TestimonialGrid`, `Countdown`, `SearchModal`, `CookieConsent`, `Logo`.
 
 ---
 
-*Source: `lib/transformer.ts` — last updated 2026-07-05. Revised per mobile team reviews (`CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`, `CONVERTER-SPEC-REVIEW-2026-07-05.md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*
+## 14. Worked Example — Three-Page Mobile Site JSON
+
+The reference payload for the mobile block set: **`home` · `login` · `products`**. Available as the
+first preset in the converter playground (`lib/transformer.ts` → `EXAMPLE_PRESETS[0]`) — run it there
+to see the full output. It converts with **zero warnings**.
+
+Every block in it comes from [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md). Deliberately absent:
+`SiteHeader`, `SiteFooter`, `ZonePopup`, `Space`, `RowGroup`, `Hero`, `Card`, `Stats` — none are in the
+block set.
+
+### Page roles
+
+
+| Page       | Route (in) | Route (out) | What it exercises |
+| ---------- | ---------- | ----------- | ----------------- |
+| Home       | `/`        | `/home`     | **Static blocks only.** `ContentHeading`, `ContentParagraph`, `ContentImage`, `ContentIcon`, `ContentDivider`, `Flex`, `Group`, `ImageGallery` (slider), `VideoEmbed`, `Testimonials`, `Accordion`. No data binding, no cubit calls |
+| Login      | `/login`   | `/login`    | **A real form.** `ContentInput` × 2 + `ContentSwitch` + `ContentButton` (`buttonAction: "login"`) inside one `Section` ⇒ `form` wrapper + `cubitCall auth.login` |
+| Products   | `/products`| `/products` | **Products Grid preset.** One unexpanded card-template `Group` ⇒ `gridView` + `itemBuilder.repeat` over the collection request |
+
+
+The site-level `zones` carry one `ZoneDrawer` — the only site zone in the block set — which becomes
+the page-level `appDrawer` on **all three** pages and turns on `appBar.showMenu`.
+
+### Envelope shape
+
+```json
+{
+  "schemaVersion": "1.0",
+  "app": { "name": "…", "bundleId": "…", "apiBaseUrl": "…", "tenantId": "…", "tenantSlug": "…" },
+  "theme": { "mode": "light", "colors": { }, "typography": { }, "radius": { }, "spacing": { }, "buttons": { } },
+  "navigation": {
+    "type": "tabs",
+    "initialRoute": "/splash",
+    "shellExcludeRoutes": ["/splash", "…", "/orders", "/login", "/products"],
+    "tabs": [ { "id": "tab-home", "route": "/home" }, "…" ]
+  },
+  "pages": [
+    { "id": "page-home",     "route": "/home",     "scroll": "vertical", "appBar": { }, "body": [ ], "appDrawer": { } },
+    { "id": "page-login",    "route": "/login",    "scroll": "none",     "appBar": { }, "body": [ ], "appDrawer": { } },
+    { "id": "page-products", "route": "/products", "scroll": "vertical", "appBar": { }, "body": [ ], "appDrawer": { } }
+  ]
+}
+```
+
+Note `/login` and `/products` in `shellExcludeRoutes` — they are pages but not tab roots, so they are
+generated into the exclude list ([§ 7 page rules](#page-rules)). `/` normalises to `/home`, which *is*
+a tab root and so is not excluded.
+
+### 14.1 Home — static blocks
+
+The hero `Section` (`paddingHorizontal: "16px"`, `backgroundColor: "#f6f8fc"`, `columnsMobile: 1`):
+
+**Web input (abridged):**
+
+```json
+{
+  "type": "Section",
+  "props": {
+    "name": "الترحيب", "visible": true,
+    "paddingTop": "40px", "paddingBottom": "32px", "paddingHorizontal": "16px",
+    "backgroundColor": "#f6f8fc", "columns": 1, "columnsMobile": 1, "gridGap": "16px",
+    "content": [
+      { "type": "ContentHeading", "props": { "text": "أهلاً بك في متجري", "level": "1", "textAlign": "center", "fontSize": "theme-2xl", "fontWeight": "theme-bold", "color": "theme-text" } },
+      { "type": "ContentParagraph", "props": { "text": "تشكيلة مختارة بعناية…", "textAlign": "center", "fontSize": "theme-md", "fontWeight": "theme-light", "color": "theme-neutral" } },
+      { "type": "ContentImage", "props": { "src": "https://…", "alt": "صورة البانر الرئيسي", "objectFit": "cover", "radius": "theme-lg", "maxWidth": "100%" } },
+      { "type": "ContentButton", "props": { "label": "تصفّح المنتجات", "align": "center", "destinationType": "link", "link": { "kind": "page", "pageId": "/products" }, "buttonVariantMode": "variant", "buttonVariant": "primary", "buttonVariantSize": "lg" } }
+    ]
+  }
+}
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "section-container-7",
+  "type": "container",
+  "props": { "color": "#f6f8fc", "padding": { "top": 40, "bottom": 32, "left": 16, "right": 16 } },
+  "child": {
+    "id": "section-column-5",
+    "type": "column",
+    "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
+    "children": [
+      { "id": "heading-1", "type": "text", "props": { "value": "أهلاً بك في متجري", "fontSize": 28, "fontWeight": "bold", "textAlign": "center", "color": "#14243f" } },
+      { "id": "text-2", "type": "text", "props": { "value": "تشكيلة مختارة بعناية…", "fontSize": 16, "textAlign": "center", "fontWeight": "normal", "color": "#6b7d93" } },
+      { "id": "image-3", "type": "image", "props": { "url": "https://…", "source": "network", "semanticsLabel": "صورة البانر الرئيسي", "fit": "cover", "borderRadius": 24 } },
+      {
+        "id": "button-4",
+        "type": "button",
+        "props": { "label": "تصفّح المنتجات", "variant": "elevated", "height": 56 },
+        "tap": { "type": "navigate", "route": "/products", "navigation_type": "push" }
+      }
+    ]
+  }
+}
+```
+
+Points worth noting:
+
+- `level: "1"` drives `fontSize: 28` + `fontWeight: "bold"` — the web `fontSize: "theme-2xl"` is **not**
+  what produces 28 here; heading level wins ([§ 6.2](#62-heading--contentheading)).
+- `radius: "theme-lg"` → `borderRadius: 24`, on the spacing scale — see the
+  [§ 5 known deviation](#5-token-resolution-tables).
+- `buttonVariantSize: "lg"` → `height: 56`. An `md` button emits no `height` at all.
+- `maxWidth` and `align` on `ContentImage` are dropped ([§ 6.8](#68-image--contentimage)).
+
+The features strip shows the mobile-set replacement for the legacy `Card` block — a `Group` with
+surface styling, which becomes a **`container` wrapping a `column`**:
+
+```json
+{
+  "id": "group-surface-14",
+  "type": "container",
+  "props": { "color": "#f6f8fc", "padding": { "top": 16, "bottom": 16, "left": 16, "right": 16 }, "borderRadius": 16, "shadow": "sm" },
+  "child": {
+    "id": "column-10",
+    "type": "column",
+    "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "center", "gap": 8 },
+    "children": [
+      { "id": "icon-11", "type": "icon", "props": { "name": "local_shipping", "size": 32, "color": "#0b78c5" } },
+      { "id": "heading-12", "type": "text", "props": { "value": "توصيل سريع", "fontSize": 16, "fontWeight": "semibold", "textAlign": "center", "color": "#14243f" } },
+      { "id": "text-13", "type": "text", "props": { "value": "٢-٤ أيام عمل", "fontSize": 14, "textAlign": "center", "color": "#6b7d93" } }
+    ]
+  }
+}
+```
+
+### 14.2 Login — form + `cubitCall auth.login`
+
+One `Section` holding both inputs and the submit button. Because it does, the converter wraps its
+content in a `form` and the button submits it instead of navigating
+([§ 6.34 auth forms](#auth-forms--the-form-wrapper)).
+
+**Web input:**
+
+```json
+{
+  "path": "/login", "slug": "/login", "name": "تسجيل الدخول", "title": "تسجيل الدخول",
+  "scroll": "none",
+  "content": [{
+    "type": "Section",
+    "props": {
+      "name": "نموذج الدخول", "visible": true,
+      "paddingTop": "48px", "paddingBottom": "48px", "paddingHorizontal": "24px",
+      "backgroundColor": "#ffffff", "maxWidth": "480px", "columns": 1, "columnsMobile": 1,
+      "content": [
+        { "type": "ContentHeading", "props": { "text": "تسجيل الدخول", "level": "1", "textAlign": "center" } },
+        { "type": "ContentParagraph", "props": { "text": "أدخل رقم هاتفك وكلمة المرور للمتابعة.", "textAlign": "center", "fontSize": "theme-sm" } },
+        { "type": "ContentInput", "props": { "label": "رقم الهاتف", "name": "phone", "inputType": "tel", "placeholder": "09xxxxxxxx", "required": true } },
+        { "type": "ContentInput", "props": { "label": "كلمة المرور", "name": "password", "inputType": "password", "placeholder": "••••••••", "required": true } },
+        { "type": "ContentSwitch", "props": { "label": "تذكّرني", "name": "rememberMe", "defaultChecked": false, "switchAction": "" } },
+        { "type": "ContentButton", "props": { "label": "دخول", "align": "center", "destinationType": "action", "buttonAction": "login", "submitRedirectUrl": "/", "buttonVariantMode": "variant", "buttonVariant": "primary", "buttonVariantSize": "lg" } },
+        { "type": "ContentDivider", "props": { "thickness": "1px", "colorMode": "theme", "colorTheme": "neutral" } },
+        { "type": "ContentLink", "props": { "title": "العودة إلى الرئيسية", "link": { "kind": "page", "pageId": "/" }, "align": "center", "color": "theme-primary", "fontSize": "theme-sm" } }
+      ]
+    }
+  }]
+}
+```
+
+**Mobile output (page node):**
+
+```json
+{
+  "id": "page-login",
+  "route": "/login",
+  "title": "تسجيل الدخول",
+  "background": "#ffffff",
+  "scroll": "none",
+  "appBar": {
+    "id": "login-app-bar",
+    "type": "appBar",
+    "props": {
+      "title": "تسجيل الدخول", "backgroundColor": "#ffffff", "foregroundColor": "#0f172a", "elevation": 0,
+      "showMenu": true, "menuAction": { "type": "openDrawer" },
+      "showCartIcon": true, "cartBadgePath": "cart.itemCount", "cartAction": { "type": "navigate", "route": "/cart" }
+    }
+  },
+  "body": [
+    {
+      "id": "section-container-77",
+      "type": "container",
+      "props": { "color": "#ffffff", "padding": { "top": 48, "bottom": 48, "left": 24, "right": 24 } },
+      "child": {
+        "id": "form-75",
+        "type": "form",
+        "props": { "formId": "login-form", "id": "login-form" },
+        "child": {
+          "id": "section-column-74",
+          "type": "column",
+          "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
+          "children": [
+            { "id": "heading-66", "type": "text", "props": { "value": "تسجيل الدخول", "fontSize": 28, "fontWeight": "bold", "textAlign": "center", "color": "#14243f" } },
+            { "id": "text-67", "type": "text", "props": { "value": "أدخل رقم هاتفك وكلمة المرور للمتابعة.", "fontSize": 14, "textAlign": "center", "fontWeight": "normal", "color": "#6b7d93" } },
+            { "id": "input-68", "type": "textFormField", "props": { "id": "phone", "label": "رقم الهاتف", "hint": "09xxxxxxxx", "textDirection": "ltr", "keyboardType": "phone", "validatePhone": true, "validateRequired": true } },
+            { "id": "input-69", "type": "textFormField", "props": { "id": "password", "label": "كلمة المرور", "hint": "••••••••", "textDirection": "ltr", "obscureText": true, "validateRequired": true } },
+            { "id": "switch-70", "type": "switchField", "props": { "id": "rememberMe", "label": "تذكّرني", "activeColor": "#0b78c5" } },
+            {
+              "id": "button-71",
+              "type": "button",
+              "props": { "label": "دخول", "variant": "elevated", "height": 56 },
+              "tap": {
+                "type": "cubitCall",
+                "cubit": "auth",
+                "method": "login",
+                "requireValidForm": true,
+                "formId": "login-form",
+                "params": {
+                  "phone": { "source": "form", "field": "phone" },
+                  "password": { "source": "form", "field": "password" }
+                },
+                "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "go" }
+              }
+            },
+            { "id": "divider-72", "type": "divider", "props": { "thickness": 1, "color": "#6b7d93" } },
+            {
+              "id": "link-73",
+              "type": "button",
+              "props": { "label": "العودة إلى الرئيسية", "variant": "text", "color": "#0b78c5" },
+              "tap": { "type": "navigate", "route": "/home", "navigation_type": "push" }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "appDrawer": { "…": "from the ZoneDrawer site zone" }
+}
+```
+
+Points worth noting:
+
+- The `form` sits **inside** the Section's `container` and **outside** the `column` — chrome stays on
+  the container, field scope on the form.
+- `rememberMe` is collected for form validity but **excluded from `params`** — it is a UI preference,
+  not a credential.
+- `submitRedirectUrl: "/"` → `onSuccess` navigate to `/home` with `navigation_type: "go"` (replace, not
+  push — you must not be able to go "back" into a login screen).
+- `password` gets `textDirection: "ltr"` and `obscureText: true`; `tel` gets `keyboardType: "phone"` +
+  `validatePhone`.
+- `scroll: "none"` came from the page input — set it on every auth screen
+  ([§ 7 page rules](#page-rules)).
+- The engine requires an `auth` cubit exposing `login`. A `login` button with **no** sibling inputs
+  still emits the old navigate stub to the native `/auth/login` screen.
+
+### 14.3 Products — the Products Grid preset
+
+The preset Section is not expanded on the web side: `content` holds exactly **one** card-template
+`Group` with `product: null`. See [§ 9.7](#97-products-grid--products-page-the-unexpanded-card-template)
+for the trigger conditions.
+
+**Web input:**
+
+```json
+{
+  "type": "Section",
+  "props": {
+    "name": "Featured", "visible": true,
+    "paddingTop": "16px", "paddingBottom": "40px", "paddingHorizontal": "16px",
+    "maxWidth": "1280px", "columns": 3, "columnsMobile": 2, "gridGap": "16px",
+    "metadata": { "preset": "products-grid" },
+    "collection": { "id": "coll_featured", "name": "Featured", "slug": "featured", "productCount": 24 },
+    "content": [{
+      "type": "Group",
+      "props": {
+        "product": null, "metadata": null,
+        "direction": "column", "gap": 10, "alignItems": "stretch",
+        "backgroundColor": "theme-surface", "padding": "12px", "borderRadius": "theme-md", "boxShadow": "sm",
+        "language": "ar",
+        "content": [
+          { "type": "ContentImage", "props": { "src": "https://placehold.co/400x400", "valueContext": { "path": "images[0].url" }, "alt": "صورة المنتج", "altValueContext": { "path": "product.title" }, "objectFit": "cover", "radius": "theme-md" } },
+          { "type": "ContentHeading", "props": { "text": "اسم المنتج", "valueContext": { "path": "product.title" }, "level": "3", "textAlign": "right" } },
+          { "type": "ContentParagraph", "props": { "text": "٠ ل.س", "valueContext": { "path": "pricing.displayPrice" }, "textAlign": "right", "fontSize": "theme-sm", "fontWeight": "theme-semibold", "color": "theme-primary" } },
+          { "type": "ContentButton", "props": { "label": "إضافة إلى السلة", "align": "center", "destinationType": "action", "buttonAction": "addToCart", "buttonVariantMode": "variant", "buttonVariant": "primary", "buttonVariantSize": "sm" } }
+        ]
+      }
+    }]
+  }
+}
+```
+
+**Mobile output:**
+
+```json
+{
+  "id": "section-container-97",
+  "type": "container",
+  "props": { "color": "#ffffff", "padding": { "top": 16, "bottom": 40, "left": 16, "right": 16 } },
+  "child": {
+    "id": "products-grid-95",
+    "type": "gridView",
+    "props": {
+      "crossAxisCount": 2,
+      "mainAxisSpacing": 16,
+      "crossAxisSpacing": 16,
+      "childAspectRatio": 0.75,
+      "enableInnerScroll": false,
+      "requestKey": "product-list",
+      "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=20",
+      "emptyMessage": "لا توجد منتجات",
+      "errorMessage": "حدث خطأ"
+    },
+    "itemBuilder": {
+      "type": "repeat",
+      "source": "dataContext.requests.product-list.data",
+      "item": {
+        "id": "group-surface-94",
+        "type": "container",
+        "props": { "color": "#f6f8fc", "padding": { "top": 12, "bottom": 12, "left": 12, "right": 12 }, "borderRadius": 16, "shadow": "sm" },
+        "child": {
+          "id": "column-89",
+          "type": "column",
+          "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 10 },
+          "children": [
+            { "id": "image-90", "type": "image", "props": { "source": "network", "semanticsLabel": "صورة المنتج", "fit": "cover", "borderRadius": 16, "urlPath": "item.primaryImageUrl" } },
+            { "id": "heading-91", "type": "text", "props": { "fontSize": 16, "fontWeight": "semibold", "textAlign": "right", "color": "#14243f", "valuePath": "item.name" } },
+            { "id": "text-92", "type": "text", "props": { "fontSize": 14, "textAlign": "right", "fontWeight": "semibold", "color": "#0b78c5", "valuePath": "item.price" } },
+            {
+              "id": "button-93",
+              "type": "button",
+              "props": { "label": "إضافة إلى السلة", "variant": "elevated", "height": 36 },
+              "tap": { "type": "cubitCall", "cubit": "cart", "method": "addItem" }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+Points worth noting:
+
+- `columnsMobile: 2` wins over `columns: 3` — mobile always reads the mobile column count.
+- The Section's padding / background still wrap the grid; only the children wrapper is replaced.
+- Bound children lose their static `value` / `url` and gain `valuePath` / `urlPath` on `item.*`
+  ([§ 9.5](#95-valuecontext-binding-group--content-blocks)). The **static `semanticsLabel` stays** —
+  `altValueContext` is dropped, because `semanticsLabelPath` is not an engine prop.
+- The button label stays static. There is no `labelPath` on `button`.
+- `collection.id` builds the `requestUrl`; `size` is capped at 20.
+
+---
+
+*Source: `lib/transformer.ts` — last updated 2026-08-07. Web input source of truth: `docs/BLOCKS-MOBILE.md`. Earlier revisions per mobile team reviews (`CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`, `CONVERTER-SPEC-REVIEW-2026-07-05.md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*

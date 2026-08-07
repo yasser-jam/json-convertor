@@ -870,6 +870,235 @@ describe("transformWebToMobile", () => {
         expect(result.success).toBe(true);
       }
     });
+
+    it("exposes exactly one non-legacy preset — the canonical mobile example", () => {
+      const current = EXAMPLE_PRESETS.filter((p) => !p.legacy);
+      expect(current).toHaveLength(1);
+      expect(current[0]).toBe(EXAMPLE_PRESETS[0]);
+      expect(current[0].label).toContain("3 pages");
+    });
+
+    it("gives every legacy preset a reason", () => {
+      for (const preset of EXAMPLE_PRESETS.filter((p) => p.legacy)) {
+        expect(preset.legacyReason, preset.label).toBeTruthy();
+      }
+    });
+
+    describe("canonical 3-page mobile example", () => {
+      const result = transformWebToMobile(EXAMPLE_PRESETS[0].json) as Extract<TransformResult, { success: true }>;
+      const pages = (result.output as Record<string, unknown>).pages as Record<string, unknown>[];
+      const page = (route: string) => pages.find((p) => p.route === route) as Record<string, unknown>;
+
+      it("converts with no warnings", () => {
+        expect(result.warnings ?? []).toEqual([]);
+      });
+
+      it("uses only blocks from the mobile block set", () => {
+        // docs/BLOCKS-MOBILE.md — anything outside this list must not appear in the example.
+        const MOBILE_BLOCK_SET = new Set([
+          "Accordion", "Blank", "ButtonGroup", "Chip", "ContentButton", "ContentDivider",
+          "ContentHeading", "ContentIcon", "ContentImage", "ContentInput", "ContentLink",
+          "ContentParagraph", "ContentSwitch", "Flex", "Grid", "Group", "ImageGallery",
+          "Section", "Testimonials", "VideoEmbed", "ZoneDrawer", "ZoneBottomSheet",
+        ]);
+        const seen = new Set<string>();
+        const walk = (node: unknown): void => {
+          if (Array.isArray(node)) return node.forEach(walk);
+          if (!node || typeof node !== "object") return;
+          const obj = node as Record<string, unknown>;
+          if (typeof obj.type === "string") seen.add(obj.type);
+          Object.values(obj).forEach(walk);
+        };
+        walk(JSON.parse(EXAMPLE_PRESETS[0].json));
+        const offenders = [...seen].filter((t) => !MOBILE_BLOCK_SET.has(t));
+        expect(offenders).toEqual([]);
+      });
+
+      it("emits the three expected routes with / normalized to /home", () => {
+        expect(pages.map((p) => p.route)).toEqual(["/home", "/login", "/products"]);
+      });
+
+      it("excludes the two non-tab routes from the navigation shell", () => {
+        const nav = (result.output as Record<string, unknown>).navigation as Record<string, unknown>;
+        const excluded = nav.shellExcludeRoutes as string[];
+        expect(excluded).toContain("/login");
+        expect(excluded).toContain("/products");
+        expect(excluded).not.toContain("/home");
+      });
+
+      it("gives every page the appDrawer from the ZoneDrawer site zone", () => {
+        for (const p of pages) {
+          expect(p.appDrawer, p.route as string).toBeDefined();
+          const appBar = p.appBar as Record<string, unknown>;
+          expect((appBar.props as Record<string, unknown>).showMenu).toBe(true);
+        }
+      });
+
+      it("home page body is static — no requests, taps or bound paths", () => {
+        const json = JSON.stringify(page("/home").body);
+        expect(json).not.toContain("requestUrl");
+        expect(json).not.toContain("cubitCall");
+        expect(json).not.toContain("valuePath");
+        expect(json).not.toContain("urlPath");
+      });
+
+      it("login page wraps its fields in a form that the login button submits", () => {
+        const p = page("/login");
+        expect(p.scroll).toBe("none");
+        const section = (p.body as Record<string, unknown>[])[0];
+        const form = section.child as Record<string, unknown>;
+        expect(form.type).toBe("form");
+        expect(form.props).toMatchObject({ formId: "login-form", id: "login-form" });
+
+        const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
+        const button = children.find((c) => c.type === "button" && (c.props as Record<string, unknown>).label === "دخول")!;
+        expect(button.tap).toEqual({
+          type: "cubitCall",
+          cubit: "auth",
+          method: "login",
+          requireValidForm: true,
+          formId: "login-form",
+          params: {
+            phone: { source: "form", field: "phone" },
+            password: { source: "form", field: "password" },
+          },
+          onSuccess: { type: "navigate", route: "/home", navigation_type: "go" },
+        });
+      });
+
+      it("login page emits ltr obscured password and a switchField", () => {
+        const form = ((page("/login").body as Record<string, unknown>[])[0].child as Record<string, unknown>);
+        const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
+        const password = children.find((c) => (c.props as Record<string, unknown>).id === "password")!;
+        expect(password.type).toBe("textFormField");
+        expect(password.props).toMatchObject({ obscureText: true, textDirection: "ltr" });
+
+        const remember = children.find((c) => c.type === "switchField")!;
+        expect(remember.props).toMatchObject({ id: "rememberMe", label: "تذكّرني" });
+      });
+
+      it("products page converts the card template to a bound gridView", () => {
+        const grid = ((page("/products").body as Record<string, unknown>[])[1].child as Record<string, unknown>);
+        expect(grid.type).toBe("gridView");
+        expect(grid.props).toMatchObject({
+          crossAxisCount: 2, // columnsMobile wins over columns: 3
+          requestKey: "product-list",
+          requestUrl: "/api/v1/public/collections/coll_featured/products?page=0&size=20",
+        });
+        const item = (grid.itemBuilder as Record<string, unknown>).item as Record<string, unknown>;
+        const cardChildren = (item.child as Record<string, unknown>).children as Record<string, unknown>[];
+        expect((cardChildren[0].props as Record<string, unknown>).urlPath).toBe("item.primaryImageUrl");
+        expect((cardChildren[1].props as Record<string, unknown>).valuePath).toBe("item.name");
+        expect((cardChildren[2].props as Record<string, unknown>).valuePath).toBe("item.price");
+        expect(cardChildren[3].tap).toEqual({ type: "cubitCall", cubit: "cart", method: "addItem" });
+      });
+    });
+  });
+
+  describe("ContentSwitch → switchField", () => {
+    const convert = (props: Record<string, unknown>) => {
+      const result = transformWebToMobile(JSON.stringify({
+        path: "/t",
+        rootProps: { direction: "rtl", language: "ar", primary: "#0b78c5" },
+        blocks: [{ type: "ContentSwitch", props }],
+      })) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      return { node: body[0], warnings: result.warnings ?? [] };
+    };
+
+    it("maps name to the form field id and themes the active colour", () => {
+      const { node } = convert({ label: "تذكّرني", name: "rememberMe" });
+      expect(node.type).toBe("switchField");
+      expect(node.props).toEqual({ id: "rememberMe", label: "تذكّرني", activeColor: "#0b78c5" });
+    });
+
+    it("stores defaultChecked as a string, and omits it when false", () => {
+      expect((convert({ name: "a", defaultChecked: true }).node.props as Record<string, unknown>).value).toBe("true");
+      expect((convert({ name: "a", defaultChecked: false }).node.props as Record<string, unknown>)).not.toHaveProperty("value");
+    });
+
+    it("warns that a bound switchAction is not wired", () => {
+      const { warnings } = convert({ name: "in-stock-only", switchAction: "filter_in_stock_only" });
+      expect(warnings.join(" ")).toContain("filter_in_stock_only");
+    });
+
+    it("warns that helperText is dropped", () => {
+      const { node, warnings } = convert({ name: "a", helperText: "hint" });
+      expect(node.props).not.toHaveProperty("helperText");
+      expect(warnings.join(" ")).toContain("helperText");
+    });
+  });
+
+  describe("auth form detection", () => {
+    const loginPage = (content: Record<string, unknown>[]) =>
+      transformWebToMobile(JSON.stringify({
+        path: "/login",
+        rootProps: { direction: "rtl", language: "ar", primary: "#0b78c5" },
+        blocks: [{ type: "Section", props: { content } }],
+      })) as Extract<TransformResult, { success: true }>;
+
+    const sectionChild = (result: Extract<TransformResult, { success: true }>) => {
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      return (body[0] as Record<string, unknown>).child as Record<string, unknown>;
+    };
+
+    it("falls back to the navigate stub when the login button has no sibling inputs", () => {
+      const result = loginPage([
+        { type: "ContentButton", props: { label: "دخول", destinationType: "action", buttonAction: "login" } },
+      ]);
+      const child = sectionChild(result);
+      expect(child.type).toBe("column");
+      const button = (child.children as Record<string, unknown>[])[0];
+      expect(button.tap).toEqual({ type: "navigate", route: "/auth/login", navigation_type: "push" });
+    });
+
+    it("does not wrap inputs in a form when no auth button is present", () => {
+      const result = loginPage([
+        { type: "ContentInput", props: { label: "الاسم", name: "name" } },
+      ]);
+      expect(sectionChild(result).type).toBe("column");
+    });
+
+    it("excludes rememberMe and password confirmations from the submitted params", () => {
+      const result = loginPage([
+        { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
+        { type: "ContentInput", props: { name: "password", inputType: "password" } },
+        { type: "ContentInput", props: { name: "passwordConfirm", inputType: "password" } },
+        { type: "ContentSwitch", props: { name: "rememberMe" } },
+        { type: "ContentButton", props: { label: "دخول", destinationType: "action", buttonAction: "login" } },
+      ]);
+      const form = sectionChild(result);
+      const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
+      const tap = children.find((c) => c.type === "button")!.tap as Record<string, unknown>;
+      expect(Object.keys(tap.params as Record<string, unknown>)).toEqual(["phone", "password"]);
+    });
+
+    it("keeps each Section's form scope separate", () => {
+      const result = transformWebToMobile(JSON.stringify({
+        path: "/login",
+        rootProps: { direction: "rtl", language: "ar", primary: "#0b78c5" },
+        blocks: [
+          {
+            type: "Section",
+            props: {
+              content: [
+                { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
+                { type: "ContentButton", props: { label: "دخول", destinationType: "action", buttonAction: "login" } },
+              ],
+            },
+          },
+          // A second Section with a lone input must not be pulled into the form above.
+          { type: "Section", props: { content: [{ type: "ContentInput", props: { name: "newsletter" } }] } },
+        ],
+      })) as Extract<TransformResult, { success: true }>;
+      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      expect((body[0].child as Record<string, unknown>).type).toBe("form");
+      expect((body[1].child as Record<string, unknown>).type).toBe("column");
+
+      const children = ((body[0].child as Record<string, unknown>).child as Record<string, unknown>).children as Record<string, unknown>[];
+      const tap = children.find((c) => c.type === "button")!.tap as Record<string, unknown>;
+      expect(Object.keys(tap.params as Record<string, unknown>)).toEqual(["phone"]);
+    });
   });
 
   describe("single block input (no path or blocks)", () => {
@@ -1406,7 +1635,7 @@ describe("transformWebToMobile", () => {
       expect(result.warnings?.join(" ")).toContain('Overlay zone "promo" is never opened');
     });
 
-    it("ignores metadata.preset / sectionKind — presets are a web authoring concern only", () => {
+    it("ignores metadata.preset / sectionKind once the preset content is expanded", () => {
       // Strip generated ids: they are counter-based, so only structure/props are comparable.
       const stripIds = (value: unknown): unknown => {
         if (Array.isArray(value)) return value.map(stripIds);
@@ -1449,6 +1678,122 @@ describe("transformWebToMobile", () => {
       })) as Extract<TransformResult, { success: true }>;
 
       expect(stripIds(preset.output)).toEqual(stripIds(plain.output));
+    });
+
+    describe("products-grid / products-page card template", () => {
+      const templateSection = (sectionProps: Record<string, unknown>) => JSON.stringify({
+        path: "/products", label: "Products",
+        rootProps: { language: "ar", direction: "rtl", primary: "#0b78c5", surface: "#f6f8fc" },
+        blocks: [{
+          type: "Section",
+          props: {
+            paddingTop: "0", paddingBottom: "0", columns: 3, columnsMobile: 2, gridGap: "16px",
+            ...sectionProps,
+          },
+        }],
+      });
+
+      const cardTemplateGroup = {
+        type: "Group",
+        props: {
+          product: null, metadata: null, skipProductDetailFetch: true,
+          direction: "column", gap: 10,
+          content: [
+            { type: "ContentImage", props: { src: "https://placehold.co/400x400", valueContext: { path: "images[0].url" } } },
+            { type: "ContentHeading", props: { text: "اسم المنتج", valueContext: { path: "product.title" } } },
+            { type: "ContentParagraph", props: { text: "٠ ل.س", valueContext: { path: "pricing.displayPrice" } } },
+          ],
+        },
+      };
+
+      const gridOf = (result: Extract<TransformResult, { success: true }>) => {
+        const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+        return (body[0].child as Record<string, unknown>);
+      };
+
+      it("repeats the one card-template Group over the picked collection", () => {
+        const result = transformWebToMobile(templateSection({
+          metadata: { preset: "products-grid" },
+          collection: { id: "coll_featured", name: "Featured", slug: "featured", productCount: 24 },
+          content: [cardTemplateGroup],
+        })) as Extract<TransformResult, { success: true }>;
+
+        const grid = gridOf(result);
+        expect(grid.type).toBe("gridView");
+        const gridProps = grid.props as Record<string, unknown>;
+        expect(gridProps.crossAxisCount).toBe(2);
+        expect(gridProps.requestKey).toBe("product-list");
+        expect(gridProps.requestUrl).toBe("/api/v1/public/collections/coll_featured/products?page=0&size=20");
+
+        const itemBuilder = grid.itemBuilder as Record<string, unknown>;
+        expect(itemBuilder.type).toBe("repeat");
+        expect(itemBuilder.source).toBe("dataContext.requests.product-list.data");
+      });
+
+      it("binds template children to item.* instead of keeping static fallbacks", () => {
+        const result = transformWebToMobile(templateSection({
+          metadata: { preset: "products-grid" },
+          collection: { id: "coll_featured", slug: "featured" },
+          content: [cardTemplateGroup],
+        })) as Extract<TransformResult, { success: true }>;
+
+        const itemBuilder = gridOf(result).itemBuilder as Record<string, unknown>;
+        const children = ((itemBuilder.item as Record<string, unknown>).children as Record<string, unknown>[]);
+        const [image, title, price] = children.map((c) => c.props as Record<string, unknown>);
+        expect(image.urlPath).toBe("item.primaryImageUrl");
+        expect(image.url).toBeUndefined();
+        expect(title.valuePath).toBe("item.name");
+        expect(title.value).toBeUndefined();
+        expect(price.valuePath).toBe("item.price");
+      });
+
+      it("falls back to the collection slug when the picker ref has no id", () => {
+        const result = transformWebToMobile(templateSection({
+          metadata: { preset: "products-grid" },
+          collection: { name: "Featured", slug: "featured" },
+          content: [cardTemplateGroup],
+        })) as Extract<TransformResult, { success: true }>;
+
+        expect((gridOf(result).props as Record<string, unknown>).requestUrl)
+          .toBe("/api/v1/public/collections/featured/products?page=0&size=20");
+      });
+
+      it("reads the template from cardTemplate when content was cleared", () => {
+        const result = transformWebToMobile(templateSection({
+          metadata: { preset: "products-grid" },
+          collection: { id: "coll_featured", slug: "featured" },
+          content: [],
+          cardTemplate: [cardTemplateGroup],
+        })) as Extract<TransformResult, { success: true }>;
+
+        expect(gridOf(result).type).toBe("gridView");
+      });
+
+      it("requests the whole catalogue for products-page — it has no collection picker", () => {
+        const result = transformWebToMobile(templateSection({
+          metadata: { preset: "products-page" },
+          content: [cardTemplateGroup],
+        })) as Extract<TransformResult, { success: true }>;
+
+        expect((gridOf(result).props as Record<string, unknown>).requestUrl)
+          .toBe("/api/v1/public/products?page=0&size=20");
+      });
+
+      it("leaves a preset Section alone when its content is a product-bound Group", () => {
+        const result = transformWebToMobile(templateSection({
+          metadata: { preset: "products-grid" },
+          collection: { id: "coll_featured", slug: "featured" },
+          content: [{
+            type: "Group",
+            props: { product: { id: "p1", slug: "shirt" }, content: [] },
+          }],
+        })) as Extract<TransformResult, { success: true }>;
+
+        const grid = gridOf(result);
+        expect(grid.type).toBe("gridView");
+        expect((grid.props as Record<string, unknown>).requestUrl).toBeUndefined();
+        expect(grid.itemBuilder).toBeUndefined();
+      });
     });
 
     it("collapses cartLineId Groups into one cart listView regardless of section preset", () => {

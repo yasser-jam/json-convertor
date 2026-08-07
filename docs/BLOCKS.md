@@ -1,5 +1,18 @@
 # Puck Blocks — Reference Documentation
 
+> ## ⚠️ LEGACY — not the converter's source of truth
+>
+> **[BLOCKS-MOBILE.md](./BLOCKS-MOBILE.md) is the source of truth** for the mobile converter. It documents the
+> 22-block **mobile block set** — the only block types the mobile Site JSON registry accepts.
+>
+> This file remains the full **web** block reference: it also covers blocks that are legacy on the web side
+> (`Heading`, `Text`, `Hero`, `Card`, `Stats`, `Logos`, `NavMenu`, `Template`, `ProductCard`, `CartSection`, …)
+> or web-only (`Space`, `RowGroup`, `ContentHtml`, `ZonePopup`, `SiteDrawerShell`). Use it to understand a
+> legacy payload you have received — **never to author a new example**.
+>
+> Converter behaviour for blocks in this file but not in the mobile set is documented under
+> [CONVERTER-OUTPUT-SPEC.md § 6B — Legacy web blocks](../CONVERTER-OUTPUT-SPEC.md#6b--legacy-web-blocks-not-in-the-mobile-block-set).
+
 Each block is described with its **properties**, accepted **values**, and a ready-to-use **JSON example** (the exact shape stored in `store_config.json`).
 
 > **Common note — `layout`**  
@@ -475,7 +488,7 @@ Items are added when product blocks dispatch the `add-product` browser event (e.
 **Label:** مجموعة أزرار
 **Description:** A segmented control — a row of buttons where exactly one is active at a time. Active/inactive styles are shared by the whole group. Each button has its own title, value, and destination (link, action, or zone — same semantics as `ContentButton`). Selecting a button updates the active state, dispatches `sooq:button-group-select`, then runs that button's destination.
 
-When `bindingMode` is `"categories"` or `"pagination"`, items are generated at runtime from `StoreContext.productsPage` (see [Products Page feature](../../../../docs/products-page-feature.md)).
+When `bindingMode` is `"categories"` or `"pagination"`, items are generated at runtime from `StoreContext.productsPage` (see [Products Page feature](https://github.com/SOOQ/editor/blob/main/docs/products-page-feature.md)).
 
 ### Properties
 
@@ -1713,7 +1726,7 @@ If any value has a `colorHex`, a matching swatch dot is rendered inside its chip
 ## ProductsGrid
 
 > **Legacy — use Products Grid section preset instead.**  
-> New stores should insert a `Section` with `metadata.preset: "products-grid"` and a `collection` picker. The editor expands the section into one bound `Group` per product. See [Section — Products Grid preset](#section-products-grid-preset).
+> New stores should insert a `Section` with `metadata.preset: "products-grid"` and a `collection` picker. The section's `content` holds a single bound `Group` used as a card template, cloned per product by the repeater. See [Section — Products Grid preset](#section-products-grid-preset).
 
 **Label:** Products Grid  
 **Description:** *(Legacy block.)* A responsive grid of product cards sourced from a collection.
@@ -1802,30 +1815,60 @@ If any value has a `colorHex`, a matching swatch dot is rendered inside its chip
 | `columnsMobile` | `number \| string` | Grid columns at ≤768px viewport | `1` |
 | `gridGap` | `string` | Gap between columns | `"24px"` |
 | `metadata` | `SectionPresetMetadata \| null` | Identifies preset-driven sections — see below | `null` |
-| `sectionKind` | `"products-grid" \| "shopping-cart" \| null` | **Deprecated.** Prefer `metadata.preset` | `null` |
-| `collection` | `CollectionPickerRef \| null` | Selected collection (products-grid preset only) | `null` |
+| `sectionKind` | `"products-grid" \| "products-page" \| "shopping-cart" \| null` | **Deprecated.** Prefer `metadata.preset` | `null` |
+| `collection` | `CollectionPickerRef \| null` | Selected collection (products-grid preset only — the field is removed by `resolveFields` on a products-page section) | `null` |
 | `cartSlotItems` | `ComponentData[] \| null` | Editable cart shell snapshot persisted for storefront re-render (shopping-cart preset) | `null` |
+| `cardTemplate` | `ComponentData[] \| null` | Single-item array wrapping `content[0]` — the card template snapshot used by the repeaters (products-grid / products-page). Kept in sync by `resolveData` | `null` |
 | `content` | `Slot` | Child blocks (no nested Section) | starter content |
 
 ### Section preset metadata
 
 ```json
 { "preset": "products-grid" }
+{ "preset": "products-page" }
 { "preset": "shopping-cart" }
 ```
 
 When `metadata.preset` is set, the section behaves as a commerce preset:
 
-| `preset` | Insert source | `resolveData` behaviour | Storefront render |
-|---|---|---|---|
-| `"products-grid"` | Design Studio → Products Grid | Fetches collection products by `collection.slug`; replaces `content` with one bound `Group` per product; sets `columns` (1–3) | Renders `content` slot as-is (editable groups) |
-| `"shopping-cart"` | Design Studio → Shopping Cart | Reads `store-cart` from localStorage; merges shell blocks + one `Group` per line into `content`; stores snapshot in `cartSlotItems` | Uses `CartSectionStorefront` to re-merge live cart lines with `cartSlotItems` shell at runtime |
+| `preset` | Insert source | Data source | `resolveData` behaviour | Storefront render |
+|---|---|---|---|---|
+| `"products-grid"` | Design Studio → Products Grid | `collection` picker (`collection.slug`) | Normalizes `content` to exactly **one** template `Group` (`ensureProductsGridTemplate`); mirrors it into `cardTemplate`; copies `collection.name` into `name` when the collection changes | `ProductsGridTemplateRepeater` clones the template once per fetched product |
+| `"products-page"` | Design Studio → Products Page | Shared `productsPage` store slice (search / category / pagination) — **no `collection` picker** | Normalizes `content` to exactly **one** template `Group` (`ensureProductsPageTemplate`); mirrors it into `cardTemplate` | `ProductsPageTemplateRepeater` clones the template once per product in `productsPage.products` |
+| `"shopping-cart"` | Design Studio → Shopping Cart | `store-cart` in localStorage | Reads `store-cart`; merges shell blocks + one `Group` per line into `content`; stores snapshot in `cartSlotItems` | Uses `CartSectionStorefront` to re-merge live cart lines with `cartSlotItems` shell at runtime |
 
-The HTML `<section>` element receives `data-section-preset="products-grid"` or `"shopping-cart"` for mobile converters.
+The HTML `<section>` element receives `data-section-preset="products-grid"`, `"products-page"`, or `"shopping-cart"` for mobile converters.
+
+### Section presets: the one-template-card contract
+
+Both `products-grid` and `products-page` use the **same** contract: the `content` slot holds **exactly one bound `Group`**, which is a product-agnostic *card template*, not a materialized card. The repeater clones it per product at render time.
+
+> **Changed:** earlier builds materialized one `Group` per product into `content` at `resolveData` time. Since `ensureProductsGridTemplate` / `ensureProductsPageTemplate` landed, `content.length` is always `1`.
+
+`ensureProducts{Grid,Page}Template(content)` normalizes the slot:
+
+| Input `content` | Result |
+|---|---|
+| empty / not an array | seeded with the default card template (`createProductCardBlock`) |
+| `content[0]` is not a `Group` | replaced with the default card template |
+| legacy multi-card array | first entry kept, the rest dropped |
+| template carries `product` / `metadata` | those are stripped so the clone inherits from the repeater instead |
+
+The surviving template's props are always sanitized to:
+
+```json
+{ "product": null, "metadata": null, "skipProductDetailFetch": true }
+```
+
+`products{Grid,Page}ContentNeedsResync(content)` returns `true` whenever the slot deviates from that shape (length ≠ 1, non-`Group` head, or a non-null `product` / `metadata`, or `skipProductDetailFetch !== true`), which is what triggers the normalization outside of `insert` / `force` / `load`.
+
+Each rendered cell gets its data from a `BoundDataProvider` wrapping the clone, so the template's children bind through `valueContext` paths (`product.title`, `pricing.displayPrice`, `images[0].url`, …) with **no** `product` prop of their own. In the editor only cell index `0` is the live editable slot; cells `1..N` are read-only clones (`assignComponentIds`) that select the template when clicked.
+
+`resolveData` also mirrors `content[0]` into `cardTemplate` as a single-item array. It is an array — not a bare object — so Puck's field walker treats it as a plain value instead of mis-detecting its inner `content` array as another slot.
 
 ### Section: Products Grid preset
 
-Insert via Design Studio section catalog (`id: "products-grid"`). Merchant picks a collection; the editor auto-fills `content` with bound product card groups.
+Insert via Design Studio section catalog (`id: "products-grid"`). Merchant picks a collection; the repeater fills the grid from that collection.
 
 ```json
 {
@@ -1849,13 +1892,9 @@ Insert via Design Studio section catalog (`id: "products-grid"`). Merchant picks
       {
         "type": "Group",
         "props": {
-          "product": { "id": "prod_01", "titleAr": "قميص", "titleEn": "Shirt", "slug": "classic-shirt" },
-          "metadata": {
-            "type": "product",
-            "method": "get",
-            "id": "prod_01",
-            "apiUrl": "https://api.example.com/public/products/classic-shirt?include=PRICING&include=IMAGES"
-          },
+          "product": null,
+          "metadata": null,
+          "skipProductDetailFetch": true,
           "direction": "column",
           "gap": 12,
           "backgroundColor": "theme-surface",
@@ -1865,12 +1904,114 @@ Insert via Design Studio section catalog (`id: "products-grid"`). Merchant picks
           "content": ["…bound ContentImage / ContentHeading / ContentButton blocks…"]
         }
       }
+    ],
+    "cardTemplate": ["…snapshot of content[0]…"]
+  }
+}
+```
+
+Editing that single `Group` restyles **every** card in the grid — there are no per-product groups to edit individually.
+
+### Section: Products Page preset
+
+Insert via Design Studio section catalog (`id: "products-page"`, category `products-grid`). Unlike products-grid there is **no collection picker** — `resolveFields` strips the `collection` field — and the grid is driven by the shared `productsPage` slice of `StoreContext`:
+
+| Slice field | Drives |
+|---|---|
+| `products` | the cells the repeater clones the template into |
+| `search` | `ContentInput` with `inputAction: "search_products"` |
+| `categories` / `selectedCategorySlug` | `ButtonGroup` with `bindingMode: "categories"` |
+| `page` / `pageSize` / `totalPages` | `ButtonGroup` with `bindingMode: "pagination"` |
+| `isLoading` / `isError` | skeleton cells / error state inside the grid |
+
+In the editor with sample data enabled, the repeater reads `adapter.getSampleProductsPage({ page: 0, size: 12 })` instead of the live slice.
+
+**Nesting:** the preset inserts a *plain* wrapper `Section` (single column, no `metadata`) whose `content` holds the search input, the category `ButtonGroup`, the **inner products-page Section**, and the pagination `ButtonGroup`. Only the inner section carries `metadata.preset: "products-page"`. This is the one place a `Section` is nested inside a `Section` — the `content` field's `disallow: ["Section", …]` blocks it in the UI, but the preset builds the tree directly.
+
+```json
+{
+  "type": "Section",
+  "props": {
+    "name": "Products page",
+    "columns": 1,
+    "columnsMobile": 1,
+    "gridGap": "24px",
+    "paddingTop": "48px",
+    "paddingBottom": "48px",
+    "paddingHorizontal": "24px",
+    "maxWidth": "1280px",
+    "content": [
+      {
+        "type": "ContentInput",
+        "props": {
+          "label": "",
+          "name": "search",
+          "inputType": "search",
+          "placeholder": "ابحث عن منتج…",
+          "required": false,
+          "prependIcon": "search",
+          "inputAction": "search_products",
+          "debounceMs": 250
+        }
+      },
+      {
+        "type": "ButtonGroup",
+        "props": {
+          "bindingMode": "categories",
+          "prependAllButton": true,
+          "allButtonTitle": "الكل",
+          "gap": "theme-8",
+          "align": "center",
+          "items": []
+        }
+      },
+      {
+        "type": "Section",
+        "props": {
+          "name": "Products grid",
+          "columns": 3,
+          "columnsMobile": 1,
+          "gridGap": "24px",
+          "paddingTop": "0px",
+          "paddingBottom": "0px",
+          "metadata": { "preset": "products-page" },
+          "sectionKind": "products-page",
+          "content": [
+            {
+              "type": "Group",
+              "props": {
+                "product": null,
+                "metadata": null,
+                "skipProductDetailFetch": true,
+                "direction": "column",
+                "gap": 14,
+                "alignItems": "stretch",
+                "backgroundColor": "theme-surface",
+                "padding": "18px",
+                "borderRadius": "theme-lg",
+                "boxShadow": "md",
+                "content": ["…bound ContentImage / ContentHeading / ContentParagraph / ContentButton blocks…"]
+              }
+            }
+          ],
+          "cardTemplate": ["…snapshot of content[0]…"]
+        }
+      },
+      {
+        "type": "ButtonGroup",
+        "props": {
+          "bindingMode": "pagination",
+          "gap": "theme-8",
+          "align": "center",
+          "items": []
+        }
+      }
     ]
   }
 }
 ```
 
-Each child `Group` is a fully editable product card. Merchants can restyle individual cards without breaking binding.
+Note the inner section has **no** `collection` prop and zero vertical padding — spacing belongs to the wrapper.
 
 ### Section: Shopping Cart preset
 
@@ -2768,11 +2909,19 @@ Stored on `SiteData.root.props`. Every field is optional — missing values fall
 
 | Prop | Type | Default | Notes |
 |---|---|---|---|
-| `bodyFont` | string (font key) | `"dm-sans"` | Base body font — CSS: `var(--theme-body-font)` |
-| `fontOption1` | string (font key) | `"space-grotesk"` | "Primary Font" slot — CSS: `var(--theme-font-1)` |
-| `fontOption2` | string (font key) | `"fraunces"` | "Secondary Font" slot — CSS: `var(--theme-font-2)` |
+| `bodyFont` | string (font key) | `"cairo"` | Base body font — CSS: `var(--theme-body-font)` |
+| `fontOption1` | string (font key) | `"tajawal"` | "Primary Font" slot — CSS: `var(--theme-font-1)` |
+| `fontOption2` | string (font key) | `"ibm-plex-sans-arabic"` | "Secondary Font" slot — CSS: `var(--theme-font-2)` |
 
-Font keys come from `FONT_OPTIONS`: `system`, `inter`, `roboto`, `open-sans`, `lato`, `poppins`, `montserrat`, `raleway`, `nunito`, `dm-sans`, `manrope`, `sora`, `playfair-display`, `merriweather`, `lora`, `space-grotesk`, `geist`, `fraunces`. Blocks reference these via the `fontFamily: "body" | "option1" | "option2"` field, resolved by `COMPONENT_FONT_CSS`.
+Font keys come from `FONT_OPTIONS` (`config/theme.ts`). The list is Arabic-first — the Latin-only entries at the end are kept for bilingual / legacy themes:
+
+| Group | Font keys |
+|---|---|
+| System | `system` |
+| Arabic / bilingual (`supportedLocales: ["ar", "en"]`) | `cairo`, `tajawal`, `almarai`, `ibm-plex-sans-arabic`, `noto-sans-arabic`, `readex-pro`, `rubik`, `changa`, `el-messiri`, `amiri`, `noto-naskh-arabic`, `scheherazade-new` |
+| Latin-only (`supportedLocales: ["en"]`) | `inter`, `roboto`, `open-sans`, `dm-sans`, `space-grotesk` |
+
+`ARABIC_FONT_OPTIONS` is `FONT_OPTIONS` filtered to entries whose `supportedLocales` includes `"ar"` — i.e. `system` plus the Arabic/bilingual group. Blocks reference the keys via the `fontFamily: "body" | "option1" | "option2"` field, resolved by `COMPONENT_FONT_CSS`.
 
 ### Colors (`ColorTheme`)
 
@@ -2932,7 +3081,7 @@ import {
 } from "@/core/config/presets";
 ```
 
-The commerce presets (`products-grid`, `shopping-cart`) rely on `Section.props.metadata.preset` for storefront resolution — see [Section — Products Grid preset](#section-products-grid-preset) and [Section — Shopping Cart preset](#section-shopping-cart-preset).
+The commerce presets (`products-grid`, `products-page`, `shopping-cart`) rely on `Section.props.metadata.preset` for storefront resolution — see [Section — Products Grid preset](#section-products-grid-preset), [Section — Products Page preset](#section-products-page-preset), and [Section — Shopping Cart preset](#section-shopping-cart-preset).
 
 For zone presets (header / footer / drawer / popup / bottom sheet), see [ZONES.md — Zone presets](./ZONES.md#zone-presets).
 
@@ -2951,8 +3100,21 @@ flowchart TB
     Collection["collection picker slug"]
     PGSection --> Collection
     Collection --> FetchProducts["fetchCollectionProductsBySlug"]
-    FetchProducts --> ProductGroups["Group per product + metadata.apiUrl"]
-    ProductGroups --> BoundChildren["ContentHeading / ContentImage / ContentButton with valueContext"]
+    PGSection --> PGTemplate["content[0] = one card template Group"]
+    FetchProducts --> PGRepeat["ProductsGridTemplateRepeater clones template per product"]
+    PGTemplate --> PGRepeat
+    PGRepeat --> BoundChildren["ContentHeading / ContentImage / ContentButton with valueContext"]
+  end
+
+  subgraph productsPage ["Products Page preset"]
+    PPWrapper["plain wrapper Section"]
+    PPWrapper --> PPControls["ContentInput search + ButtonGroup categories / pagination"]
+    PPWrapper --> PPSection["inner Section metadata.preset = products-page"]
+    PPControls --> PPSlice["productsPage store slice"]
+    PPSection --> PPTemplate["content[0] = one card template Group"]
+    PPSlice --> PPRepeat["ProductsPageTemplateRepeater clones template per product"]
+    PPTemplate --> PPRepeat
+    PPRepeat --> BoundChildren
   end
 
   subgraph shoppingCart ["Shopping Cart preset"]
@@ -3067,6 +3229,7 @@ Identifies commerce section presets on `Section.props.metadata`:
 
 ```json
 { "preset": "products-grid" }
+{ "preset": "products-page" }
 { "preset": "shopping-cart" }
 ```
 
