@@ -3354,17 +3354,40 @@ function transformBlock(block: Record<string, unknown>, rootProps: Record<string
 
 // ─── Theme Mapping ──────────────────────────────────────────────────────────
 
+/**
+ * `bodyFont` slug → the font family name the engine loads.
+ *
+ * Covers the Arabic-first `FONT_OPTIONS` list from BLOCKS-MOBILE.md plus the Latin faces. An
+ * unknown or missing slug falls back to Tajawal, which is also the `system` face for Arabic —
+ * so an Arabic store that never touched the setting keeps its previous output.
+ */
+const FONT_FAMILY_MAP: Record<string, string> = {
+  // Arabic (FONT_OPTIONS)
+  cairo: "Cairo", tajawal: "Tajawal", almarai: "Almarai",
+  "ibm-plex-sans-arabic": "IBM Plex Sans Arabic", "noto-sans-arabic": "Noto Sans Arabic",
+  "readex-pro": "Readex Pro", rubik: "Rubik", changa: "Changa", "el-messiri": "El Messiri",
+  amiri: "Amiri", "noto-naskh-arabic": "Noto Naskh Arabic", "scheherazade-new": "Scheherazade New",
+  // Latin
+  "dm-sans": "DM Sans", inter: "Inter", roboto: "Roboto", "open-sans": "Open Sans",
+  lato: "Lato", poppins: "Poppins", montserrat: "Montserrat", raleway: "Raleway",
+  nunito: "Nunito", manrope: "Manrope", sora: "Sora",
+  "playfair-display": "Playfair Display", merriweather: "Merriweather",
+  lora: "Lora", "space-grotesk": "Space Grotesk", geist: "Geist",
+  fraunces: "Fraunces",
+};
+
+/** Latin faces cannot render Arabic glyphs — an Arabic store asking for one gets Tajawal. */
+const LATIN_ONLY_FONTS = new Set([
+  "dm-sans", "inter", "roboto", "open-sans", "lato", "poppins", "montserrat", "raleway",
+  "nunito", "manrope", "sora", "playfair-display", "merriweather", "lora",
+  "space-grotesk", "geist", "fraunces",
+]);
+
 function transformFontFamily(fontSlug: string | undefined, language: string): string {
-  if (language === "ar") return "Tajawal";
-  const fontMap: Record<string, string> = {
-    "dm-sans": "DM Sans", inter: "Inter", roboto: "Roboto", "open-sans": "Open Sans",
-    lato: "Lato", poppins: "Poppins", montserrat: "Montserrat", raleway: "Raleway",
-    nunito: "Nunito", manrope: "Manrope", sora: "Sora", tajawal: "Tajawal",
-    "playfair-display": "Playfair Display", merriweather: "Merriweather",
-    lora: "Lora", "space-grotesk": "Space Grotesk", geist: "Geist",
-    fraunces: "Fraunces", system: "Tajawal",
-  };
-  return fontMap[fontSlug || ""] || "Tajawal";
+  const slug = fontSlug || "";
+  if (slug === "system") return language === "ar" ? "Tajawal" : "Inter";
+  if (language === "ar" && LATIN_ONLY_FONTS.has(slug)) return "Tajawal";
+  return FONT_FAMILY_MAP[slug] || "Tajawal";
 }
 
 function transformTheme(rootProps: Record<string, unknown>): Record<string, unknown> {
@@ -3392,7 +3415,17 @@ function transformTheme(rootProps: Record<string, unknown>): Record<string, unkn
       none: 0, sm: parsePx(rootProps.radiusSm as string, 8), md: parsePx(rootProps.radiusMd as string, 12),
       lg: parsePx(rootProps.radiusLg as string, 18), xl: parsePx(rootProps.radiusXl as string, 24), full: 9999,
     },
-    spacing: { xs: 4, sm: 10, md: 16, lg: 24, xl: 36 },
+    // The web side exposes two named spacing scales (vertical + side). `theme.spacing` is the
+    // engine's inline/box scale, so it tracks the **side** scale; `xl` borrows the vertical
+    // medium step for the one level the side scale does not reach. Absent props keep the
+    // previous fixed numbers, so a store that never touched the setting is unaffected.
+    spacing: {
+      xs: 4,
+      sm: parsePx(rootProps.spacingSideNarrow as string, 10),
+      md: parsePx(rootProps.spacingSideMedium as string, 16),
+      lg: parsePx(rootProps.spacingSideWide as string, 24),
+      xl: parsePx(rootProps.spacingVerticalMedium as string, 36),
+    },
     buttons: {
       sm: { height: parsePx(rootProps.buttonSmHeight as string, 36), padX: parsePx(rootProps.buttonSmPaddingX as string, 14), fontSize: parsePx(rootProps.buttonSmFontSize as string, 14), radius: 10 },
       md: { height: parsePx(rootProps.buttonMdHeight as string, 48), padX: parsePx(rootProps.buttonMdPaddingX as string, 18), fontSize: parsePx(rootProps.buttonMdFontSize as string, 16), radius: 12 },
@@ -4204,6 +4237,188 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
               },
             },
           ],
+        },
+      ],
+    }),
+  },
+  {
+    // ── Second canonical example ───────────────────────────────────────────────
+    // Two pages, mobile block set only, with a deliberately non-default theme:
+    //   /       "about us" heading, then a grid Section (columnsMobile: 1 ⇒ every cell full
+    //           width) whose cells are Group blocks stacking a title over a description,
+    //           then a ContentButton linking to /login
+    //   /login  two ContentInput fields + a login ContentButton ⇒ form + cubitCall auth.login
+    // Theme departs from the defaults on every axis the converter reads: a serif Arabic face
+    // (Amiri), a warm plum/clay palette, wider radii and a custom spacing scale.
+    label: "Mobile Site JSON · 2 pages (about us · login) — serif theme",
+    json: PK({
+      root: {
+        props: {
+          title: "دار الحرفة", direction: "rtl", language: "ar",
+
+          // Serif Arabic face — `amiri` is a classic naskh serif. The converter maps the
+          // FONT_OPTIONS slug to the family name; it no longer forces Tajawal on every ar store.
+          bodyFont: "amiri",
+          fontOption1: "el-messiri",
+          fontOption2: "noto-naskh-arabic",
+
+          // Palette: warm plum / clay, nothing like the default blue-grey.
+          primary: "#7c3f5d",
+          surface: "#faf3ee",
+          text: "#2f2320",
+          neutral: "#8a7268",
+          success: "#4f7a4a",
+          warning: "#b8802a",
+          error: "#a3423a",
+          dark: "#2a1c22",
+
+          // Softer, wider corners than the defaults (8 / 12 / 18 / 24).
+          radiusSm: "10px",
+          radiusMd: "18px",
+          radiusLg: "28px",
+          radiusXl: "36px",
+
+          // Custom spacing scale. The side scale drives theme.spacing sm/md/lg,
+          // spacingVerticalMedium drives xl.
+          spacingSideNarrow: "14px",
+          spacingSideMedium: "20px",
+          spacingSideWide: "40px",
+          spacingVerticalNarrow: "32px",
+          spacingVerticalMedium: "56px",
+          spacingVerticalWide: "96px",
+
+          // Roomier buttons than the 36 / 48 / 56 defaults.
+          buttonSmHeight: "40px",
+          buttonMdHeight: "52px",
+          buttonLgHeight: "60px",
+
+          breakpointMobileMax: 767,
+          breakpointTabletMax: 1023,
+        },
+      },
+      zones: {
+        // Navigation drawer — the site zone the mobile block set exposes. Becomes the
+        // page-level appDrawer on both pages and turns on appBar.showMenu.
+        "root:zone-drawer": [{
+          type: "ZoneDrawer",
+          props: {
+            is_active: true, is_mobile_only: true, zoneKey: "site-drawer", side: "right",
+            backgroundColor: "#faf3ee", overlay: true, showCloseButton: true,
+            slot: [
+              { type: "ContentHeading", props: { text: "دار الحرفة", level: "3", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-bold", color: "theme-primary" } },
+              { type: "ContentDivider", props: { thickness: "1px", colorMode: "theme", colorTheme: "neutral" } },
+              { type: "ContentLink", props: { title: "من نحن", link: { kind: "page", pageId: "/" }, align: "right", color: "theme-text", hoverEffect: "underline", fontSize: "theme-md", icon: "none" } },
+              { type: "ContentLink", props: { title: "تسجيل الدخول", link: { kind: "page", pageId: "/login" }, align: "right", color: "theme-primary", hoverEffect: "underline", fontSize: "theme-md", icon: "none" } },
+            ],
+          },
+        }],
+      },
+      pages: [
+        // ── 1. Home — "about us" heading + full-width grid ────────────────────
+        {
+          path: "/", slug: "/", name: "من نحن", link: "/", title: "من نحن",
+          description: "تعرّف على دار الحرفة", iconName: "home",
+          content: [
+            // Section 1 — the "about us" title.
+            {
+              type: "Section",
+              props: {
+                name: "عنوان من نحن", anchorId: "", visible: true,
+                paddingTop: "56px", paddingBottom: "20px", paddingHorizontal: "20px",
+                backgroundColor: "#faf3ee", theme: "dark", maxWidth: "1280px",
+                columns: 1, columnsMobile: 1, gridGap: "20px",
+                content: [
+                  { type: "ContentHeading", props: { text: "من نحن", level: "1", textAlign: "right", fontFamily: "body", fontSize: "theme-2xl", fontWeight: "theme-bold", lineHeight: "theme-tight", color: "theme-primary" } },
+                  { type: "ContentParagraph", props: { text: "ورشة عائلية تصنع الأثاث الخشبي يدويًا منذ عام ١٩٧٨.", textAlign: "right", fontFamily: "body", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-normal", color: "theme-neutral" } },
+                  { type: "ContentDivider", props: { thickness: "1px", colorMode: "theme", colorTheme: "neutral" } },
+                ],
+              },
+            },
+            // Section 2 — the grid. The SECTION is the grid container here: two columns on a
+            // wide viewport, `columnsMobile: 1` so every cell takes the full width on mobile.
+            // At one mobile column transformSection emits a plain `column`, so the cards keep
+            // their natural heights. A `Grid` block would instead emit gridView with
+            // childAspectRatio: 1.0 and square off every card — wrong for variable-height text.
+            // Each cell is a Group stacking its title above its description.
+            {
+              type: "Section",
+              props: {
+                name: "بطاقات من نحن", visible: true,
+                paddingTop: "0px", paddingBottom: "20px", paddingHorizontal: "20px",
+                backgroundColor: "#faf3ee", maxWidth: "1280px",
+                columns: 2, columnsMobile: 1, gridGap: "20px",
+                content: [
+                  {
+                    type: "Group",
+                    props: {
+                      direction: "column", gap: 8, alignItems: "stretch", justifyContent: "flex-start", wrap: "nowrap",
+                      backgroundColor: "theme-surface", padding: "20px", borderRadius: "theme-md", boxShadow: "sm",
+                      content: [
+                        { type: "ContentHeading", props: { text: "قصتنا", level: "2", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-semibold", color: "theme-text" } },
+                        { type: "ContentParagraph", props: { text: "بدأت الورشة بغرفة صغيرة وأربع أدوات. اليوم نصنع قطعًا تدوم لأجيال، بالطريقة نفسها التي تعلّمها جدّي.", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-relaxed", color: "theme-neutral" } },
+                      ],
+                    },
+                  },
+                  {
+                    type: "Group",
+                    props: {
+                      direction: "column", gap: 8, alignItems: "stretch", justifyContent: "flex-start", wrap: "nowrap",
+                      backgroundColor: "theme-surface", padding: "20px", borderRadius: "theme-md", boxShadow: "sm",
+                      content: [
+                        { type: "ContentHeading", props: { text: "حرفتنا", level: "2", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-semibold", color: "theme-text" } },
+                        { type: "ContentParagraph", props: { text: "خشب الجوز والزان المعالج طبيعيًا، وتجميع بالنقر والفتحة بلا مسامير. كل قطعة تُصقل يدويًا.", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-relaxed", color: "theme-neutral" } },
+                      ],
+                    },
+                  },
+                  {
+                    type: "Group",
+                    props: {
+                      direction: "column", gap: 8, alignItems: "stretch", justifyContent: "flex-start", wrap: "nowrap",
+                      backgroundColor: "theme-surface", padding: "20px", borderRadius: "theme-md", boxShadow: "sm",
+                      content: [
+                        { type: "ContentHeading", props: { text: "وعدنا", level: "2", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-semibold", color: "theme-text" } },
+                        { type: "ContentParagraph", props: { text: "ضمان خمس سنوات على كل قطعة، وإصلاح مجاني لأي عيب في التصنيع مدى الحياة.", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-relaxed", color: "theme-neutral" } },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+            // Section 3 — link to the login screen.
+            {
+              type: "Section",
+              props: {
+                name: "دعوة للتسجيل", visible: true,
+                paddingTop: "0px", paddingBottom: "56px", paddingHorizontal: "20px",
+                backgroundColor: "#faf3ee", columns: 1, columnsMobile: 1, gridGap: "20px",
+                content: [
+                  { type: "ContentButton", props: { label: "تسجيل الدخول", align: "center", destinationType: "link", link: { kind: "page", pageId: "/login" }, buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+                ],
+              },
+            },
+          ],
+        },
+
+        // ── 2. Login — two inputs + a login button ────────────────────────────
+        {
+          path: "/login", slug: "/login", name: "تسجيل الدخول", link: "/login",
+          title: "تسجيل الدخول", description: "الدخول إلى حسابك", iconName: "user",
+          isCustom: true, scroll: "none",
+          content: [{
+            type: "Section",
+            props: {
+              name: "نموذج الدخول", visible: true,
+              paddingTop: "56px", paddingBottom: "56px", paddingHorizontal: "20px",
+              backgroundColor: "#faf3ee", maxWidth: "480px",
+              columns: 1, columnsMobile: 1, gridGap: "20px",
+              content: [
+                { type: "ContentHeading", props: { text: "تسجيل الدخول", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-primary" } },
+                { type: "ContentInput", props: { label: "البريد الإلكتروني", name: "email", inputType: "email", placeholder: "you@example.com", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentInput", props: { label: "كلمة المرور", name: "password", inputType: "password", placeholder: "••••••••", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentButton", props: { label: "دخول", align: "center", destinationType: "action", buttonAction: "login", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+              ],
+            },
+          }],
         },
       ],
     }),

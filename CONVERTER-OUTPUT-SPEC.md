@@ -25,8 +25,11 @@
 > `SiteFooter` are a special case: not in the block set, but they are **site zones** that still drive
 > `appBar` and `pages[].footer` ([§ 7](#7-page-envelope-structure)), so their ingest rules are live.
 >
-> The worked reference payload is [§ 14 — Three-page example](#14-worked-example--three-page-mobile-site-json)
-> (`home` · `login` · `products`), also available as the first preset in the converter playground.
+> Two worked reference payloads, both also available as presets in the converter playground:
+> [§ 14](#14-worked-example-a--three-page-commerce-site-json) — a three-page commerce site
+> (`home` · `login` · `products`) on the default theme, and
+> [§ 15](#15-worked-example-b--two-page-content-site-custom-theme) — a two-page content site
+> (`about us` · `login`) on a fully customised serif theme.
 
 ---
 
@@ -47,7 +50,8 @@
 11. [Validation checklist](#11-validation-checklist)
 12. [Known limitations](#12-known-limitations)
 13. [Block convertibility matrix](#13-block-convertibility-matrix)
-14. [Worked example — three-page mobile Site JSON](#14-worked-example--three-page-mobile-site-json)
+14. [Worked example A — three-page commerce Site JSON](#14-worked-example-a--three-page-commerce-site-json)
+15. [Worked example B — two-page content site, custom theme](#15-worked-example-b--two-page-content-site-custom-theme)
 
 ---
 
@@ -2605,8 +2609,46 @@ Emitted when a `SiteDrawerShell`, `ZoneDrawer`, or `SideDrawer` block is found i
 | `language: "ar"`           | Prefers `labelAr`, `titleAr`, `textAr`, `messageAr` over English equivalents |
 | `direction: "rtl"`         | Default `textAlign: "right"` on all text nodes                               |
 | Phone / email / password / OTP fields | Always `textDirection: "ltr"` — Latin-keyed regardless of app direction |
-| `language: "ar"`           | Font family → `"Tajawal"` (overrides `bodyFont`)                             |
+| `bodyFont`                 | Resolved to a family name via the font map below; `"Tajawal"` is the fallback |
+| `language: "ar"` + a Latin-only `bodyFont` | Font family → `"Tajawal"` (Latin faces cannot render Arabic glyphs) |
 
+
+### `bodyFont` → `theme.typography.fontFamily`
+
+`bodyFont` holds a `FONT_OPTIONS` slug ([`docs/BLOCKS-MOBILE.md` § Font families](docs/BLOCKS-MOBILE.md#font-families-themeprops)). The converter maps it to the family name the engine loads.
+
+
+| Group                        | Slug → family                                                                                                                                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arabic (renders both scripts) | `cairo`→Cairo, `tajawal`→Tajawal, `almarai`→Almarai, `ibm-plex-sans-arabic`→IBM Plex Sans Arabic, `noto-sans-arabic`→Noto Sans Arabic, `readex-pro`→Readex Pro, `rubik`→Rubik, `changa`→Changa, `el-messiri`→El Messiri, **`amiri`→Amiri**, **`noto-naskh-arabic`→Noto Naskh Arabic**, **`scheherazade-new`→Scheherazade New** |
+| Latin-only                   | `dm-sans`, `inter`, `roboto`, `open-sans`, `lato`, `poppins`, `montserrat`, `raleway`, `nunito`, `manrope`, `sora`, `playfair-display`, `merriweather`, `lora`, `space-grotesk`, `geist`, `fraunces` → title-cased family name             |
+| `system`                     | `"Tajawal"` when `language: "ar"`, else `"Inter"`                                                                                                                                                                                          |
+| unset / unknown              | `"Tajawal"`                                                                                                                                                                                                                                |
+
+
+The **bold** entries are the serif faces — `amiri` is the classic Arabic naskh serif; `noto-naskh-arabic` and `scheherazade-new` are the other two. On the Latin side the serifs are `playfair-display`, `merriweather`, `lora` and `fraunces`.
+
+**A Latin-only slug on an Arabic store falls back to `Tajawal`** — those faces have no Arabic glyphs, so honouring the pick would render tofu. Pick an Arabic serif instead of a Latin one for an Arabic serif look.
+
+> `fontOption1` / `fontOption2` (the web "Primary" / "Secondary" font slots) are **not** emitted — the engine theme carries a single family, and the per-block `fontFamily: "body" | "option1" | "option2"` field is dropped ([§ 6.1](#61-text--contentparagraph)).
+
+### Theme spacing (`theme.spacing`)
+
+The web side exposes two named spacing scales; the engine theme carries one. `theme.spacing` is the engine's inline/box scale, so it tracks the **side** scale, with `xl` borrowing the one vertical step the side scale does not reach.
+
+
+| `theme.spacing` key | Source rootProp          | Fallback |
+| ------------------- | ------------------------ | -------- |
+| `xs`                | *(fixed)*                | `4`      |
+| `sm`                | `spacingSideNarrow`      | `10`     |
+| `md`                | `spacingSideMedium`      | `16`     |
+| `lg`                | `spacingSideWide`        | `24`     |
+| `xl`                | `spacingVerticalMedium`  | `36`     |
+
+
+`spacingVerticalNarrow` and `spacingVerticalWide` are **not** emitted — the vertical rhythm already reaches the output as concrete `Section` padding numbers.
+
+> `theme.spacing` is a **reference palette for the engine**, not something nodes resolve against: per [G3](#g3--no-theme-tokens-in-output) every node already carries concrete numbers. Changing it will not move any existing node.
 
 ---
 
@@ -3114,11 +3156,13 @@ Outside the mobile block set; converter behaviour retained for old payloads only
 
 ---
 
-## 14. Worked Example — Three-Page Mobile Site JSON
+## 14. Worked Example A — Three-Page Commerce Site JSON
 
-The reference payload for the mobile block set: **`home` · `login` · `products`**. Available as the
-first preset in the converter playground (`lib/transformer.ts` → `EXAMPLE_PRESETS[0]`) — run it there
-to see the full output. It converts with **zero warnings**.
+A commerce store on the default theme: **`home` · `login` · `products`**. Available as the first
+preset in the converter playground (`lib/transformer.ts` → `EXAMPLE_PRESETS[0]`) — run it there to
+see the full output. It converts with **zero warnings**.
+
+*For a content site on a fully customised theme, see [§ 15](#15-worked-example-b--two-page-content-site-custom-theme).*
 
 Every block in it comes from [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md). Deliberately absent:
 `SiteHeader`, `SiteFooter`, `ZonePopup`, `Space`, `RowGroup`, `Hero`, `Card`, `Stats` — none are in the
@@ -3455,6 +3499,275 @@ Points worth noting:
 - The button label stays static. There is no `labelPath` on `button`.
 - `collection.id` builds the `requestUrl`; `size` is capped at 20.
 
+---
+
+## 15. Worked Example B — Two-Page Content Site, Custom Theme
+
+A content site — no catalog, no cart — on a theme that departs from the defaults on **every axis the
+converter reads**: a serif Arabic face, a warm plum/clay palette, wider radii, a custom spacing scale
+and taller buttons. Available as the second preset in the converter playground
+(`lib/transformer.ts` → `EXAMPLE_PRESETS[1]`). It converts with **zero warnings**.
+
+Where [§ 14](#14-worked-example-a--three-page-commerce-site-json) exercises commerce binding, this one
+exercises **theming, the drawer zone, and the two ways to build a grid**.
+
+### Page roles
+
+
+| Page     | Route (in) | Route (out) | What it exercises |
+| -------- | ---------- | ----------- | ----------------- |
+| About us | `/`        | `/home`     | A title `Section`, then a **grid `Section`** (`columns: 2` / `columnsMobile: 1`) whose cells are `Group` blocks stacking a title over a description, then a `ContentButton` linking to `/login` |
+| Login    | `/login`   | `/login`    | Two `ContentInput` fields + a `login` `ContentButton` ⇒ `form` + `cubitCall auth.login` |
+
+
+One `ZoneDrawer` in `zones` (`side: "right"`) becomes the `appDrawer` on **both** pages.
+
+### 15.1 Theme — what the root props actually move
+
+**Web input (`root.props`):**
+
+```json
+{
+  "title": "دار الحرفة", "direction": "rtl", "language": "ar",
+
+  "bodyFont": "amiri",
+  "fontOption1": "el-messiri",
+  "fontOption2": "noto-naskh-arabic",
+
+  "primary": "#7c3f5d", "surface": "#faf3ee", "text": "#2f2320", "neutral": "#8a7268",
+  "success": "#4f7a4a", "warning": "#b8802a", "error": "#a3423a", "dark": "#2a1c22",
+
+  "radiusSm": "10px", "radiusMd": "18px", "radiusLg": "28px", "radiusXl": "36px",
+
+  "spacingSideNarrow": "14px", "spacingSideMedium": "20px", "spacingSideWide": "40px",
+  "spacingVerticalNarrow": "32px", "spacingVerticalMedium": "56px", "spacingVerticalWide": "96px",
+
+  "buttonSmHeight": "40px", "buttonMdHeight": "52px", "buttonLgHeight": "60px",
+
+  "breakpointMobileMax": 767, "breakpointTabletMax": 1023
+}
+```
+
+**Mobile output (`theme`):**
+
+```json
+{
+  "mode": "light",
+  "colors": {
+    "primary": "#7c3f5d",
+    "surface": "#faf3ee",
+    "background": "#F1F5F9",
+    "text": "#2f2320",
+    "muted": "#8a7268",
+    "success": "#4f7a4a",
+    "warning": "#b8802a",
+    "error": "#a3423a"
+  },
+  "typography": {
+    "fontFamily": "Amiri",
+    "scale": { "xs": 12, "sm": 14, "md": 16, "lg": 18, "xl": 22, "xxl": 28, "display": 36 },
+    "weights": { "normal": 400, "medium": 500, "bold": 700 },
+    "lineHeight": { "tight": 1.25, "normal": 1.5, "relaxed": 1.75 }
+  },
+  "radius": { "none": 0, "sm": 10, "md": 18, "lg": 28, "xl": 36, "full": 9999 },
+  "spacing": { "xs": 4, "sm": 14, "md": 20, "lg": 40, "xl": 56 },
+  "buttons": {
+    "sm": { "height": 40, "padX": 14, "fontSize": 14, "radius": 10 },
+    "md": { "height": 52, "padX": 18, "fontSize": 16, "radius": 12 },
+    "lg": { "height": 60, "padX": 26, "fontSize": 16, "radius": 14 }
+  }
+}
+```
+
+What moved, and what did not:
+
+
+| Root prop group             | Effect                                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `bodyFont: "amiri"`         | `typography.fontFamily: "Amiri"` — a serif Arabic naskh ([§ 8](#bodyfont--themetypographyfontfamily))          |
+| `primary` … `error`         | `colors.*` verbatim, **and** every `theme-*` colour token in a block resolves against them                     |
+| `radiusSm` … `radiusXl`     | `radius.*` verbatim. **Does not reach the nodes** — see the caveat below                                       |
+| `spacingSide*` / `spacingVerticalMedium` | `spacing.sm/md/lg/xl` ([§ 8](#theme-spacing-themespacing))                                        |
+| `buttonSmHeight` … `buttonLgHeight` | `buttons.*.height` verbatim. **Does not reach the nodes** — see the caveat below                       |
+| `background`                | Always `"#F1F5F9"` — not derived from `surface`                                                                |
+| `fontOption1` / `fontOption2` | **Not emitted** — the engine theme carries one family                                                        |
+| `dark`                      | **Not emitted** — `theme.colors` has no `dark` slot; the token still resolves inside blocks                    |
+| `spacingVerticalNarrow` / `Wide` | **Not emitted** — vertical rhythm reaches output as concrete `Section` padding                            |
+| `breakpoint*`               | **Not emitted** — breakpoints are a web-layout concern; `layout.hideOnMobile` is applied at conversion time    |
+
+
+> ### ⚠️ Caveat — `theme.radius` and `theme.buttons` are reference-only
+>
+> `theme.radius.md` is `18` here, but a block asking for `borderRadius: "theme-md"` still emits `16`,
+> and a `buttonVariantSize: "lg"` button still emits `height: 56` rather than the theme's `60`. Both
+> per-node resolvers use fixed internal scales and never read these root props — the same class of gap
+> as the [§ 5 radius deviation](#5-token-resolution-tables).
+>
+> **Renderers must treat the number on the node as authoritative** and not re-derive it from `theme`.
+> The theme block is a palette for hand-authored JSON and engine-side defaults.
+
+### 15.2 Home — title Section, then a grid Section
+
+**Section 1 — the title.** Note the heading picks up `theme-primary` as the new plum, and
+`level: "1"` drives `fontSize: 28`:
+
+```json
+{
+  "id": "section-container-6",
+  "type": "container",
+  "props": { "color": "#faf3ee", "padding": { "top": 56, "bottom": 20, "left": 20, "right": 20 } },
+  "child": {
+    "id": "section-column-4",
+    "type": "column",
+    "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
+    "children": [
+      { "id": "heading-1", "type": "text", "props": { "value": "من نحن", "fontSize": 28, "fontWeight": "bold", "textAlign": "right", "color": "#7c3f5d" } },
+      { "id": "text-2", "type": "text", "props": { "value": "ورشة عائلية تصنع الأثاث الخشبي يدويًا منذ عام ١٩٧٨.", "fontSize": 16, "textAlign": "right", "fontWeight": "normal", "color": "#8a7268" } },
+      { "id": "divider-3", "type": "divider", "props": { "thickness": 1, "color": "#8a7268" } }
+    ]
+  }
+}
+```
+
+**Section 2 — the grid.** The `Section` is the grid container, not a `Grid` block:
+
+```json
+{
+  "type": "Section",
+  "props": {
+    "name": "بطاقات من نحن", "visible": true,
+    "paddingTop": "0px", "paddingBottom": "20px", "paddingHorizontal": "20px",
+    "backgroundColor": "#faf3ee", "maxWidth": "1280px",
+    "columns": 2, "columnsMobile": 1, "gridGap": "20px",
+    "content": [
+      {
+        "type": "Group",
+        "props": {
+          "direction": "column", "gap": 8, "alignItems": "stretch", "wrap": "nowrap",
+          "backgroundColor": "theme-surface", "padding": "20px", "borderRadius": "theme-md", "boxShadow": "sm",
+          "content": [
+            { "type": "ContentHeading", "props": { "text": "قصتنا", "level": "2", "textAlign": "right", "fontSize": "theme-lg", "fontWeight": "theme-semibold", "color": "theme-text" } },
+            { "type": "ContentParagraph", "props": { "text": "بدأت الورشة بغرفة صغيرة وأربع أدوات…", "textAlign": "right", "fontSize": "theme-md", "fontWeight": "theme-light", "lineHeight": "theme-relaxed", "color": "theme-neutral" } }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+**Mobile output** — `columnsMobile: 1`, so the grid collapses to a plain `column` and each cell takes
+the full width at its natural height:
+
+```json
+{
+  "id": "section-container-21",
+  "type": "container",
+  "props": { "color": "#faf3ee", "padding": { "top": 0, "bottom": 20, "left": 20, "right": 20 } },
+  "child": {
+    "id": "section-column-20",
+    "type": "column",
+    "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
+    "children": [
+      {
+        "id": "group-surface-10",
+        "type": "container",
+        "props": { "color": "#faf3ee", "padding": { "top": 20, "bottom": 20, "left": 20, "right": 20 }, "borderRadius": 16, "shadow": "sm" },
+        "child": {
+          "id": "column-7",
+          "type": "column",
+          "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 8 },
+          "children": [
+            { "id": "heading-8", "type": "text", "props": { "value": "قصتنا", "fontSize": 18, "fontWeight": "semibold", "textAlign": "right", "color": "#2f2320" } },
+            { "id": "text-9", "type": "text", "props": { "value": "بدأت الورشة بغرفة صغيرة وأربع أدوات…", "fontSize": 16, "textAlign": "right", "fontWeight": "normal", "color": "#8a7268" } }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+> ### Two ways to build a grid — pick the Section
+>
+> | | `Section` `columnsMobile` | `Grid` block ([§ 6.19](#619-grid-layout)) |
+> | --- | --- | --- |
+> | Output at 1 column | `column` | `gridView` `crossAxisCount: 1` |
+> | Cell height | **Natural** — content decides | **Square** — `childAspectRatio: 1.0` is hard-coded |
+> | Responsive | `columns` (wide) vs `columnsMobile` | One fixed `numColumns` |
+>
+> For variable-height content — text cards, feature lists, anything with a title and a paragraph —
+> use the **`Section`**. A `Grid` block at `numColumns: 1` forces every cell to a square as tall as
+> the viewport is wide, which is almost never what the design wants. Reserve `Grid` for uniform,
+> genuinely square-ish tiles.
+
+**Section 3 — the CTA.** A plain link to the login route:
+
+```json
+{
+  "id": "button-22",
+  "type": "button",
+  "props": { "label": "تسجيل الدخول", "variant": "elevated", "height": 56 },
+  "tap": { "type": "navigate", "route": "/login", "navigation_type": "push" }
+}
+```
+
+### 15.3 The drawer zone
+
+`ZoneDrawer` with `side: "right"` ⇒ `drawerEdge: "end"`, applied to **both** pages, and each page's
+`appBar` gains `showMenu: true` + `menuAction: { "type": "openDrawer" }` even though there is no
+`SiteHeader` anywhere in the payload.
+
+```json
+{
+  "id": "drawer-30",
+  "type": "appDrawer",
+  "props": { "drawerEdge": "end", "width": 320, "backgroundColor": "#faf3ee" },
+  "child": {
+    "id": "drawer-col-31",
+    "type": "column",
+    "props": { "gap": 0 },
+    "children": [
+      { "id": "heading-26", "type": "text", "props": { "value": "دار الحرفة", "fontSize": 18, "fontWeight": "bold", "textAlign": "right", "color": "#7c3f5d" } },
+      { "id": "divider-27", "type": "divider", "props": { "thickness": 1, "color": "#8a7268" } },
+      { "id": "link-28", "type": "button", "props": { "label": "من نحن", "variant": "text", "color": "#2f2320" }, "tap": { "type": "navigate", "route": "/home", "navigation_type": "push" } },
+      { "id": "link-29", "type": "button", "props": { "label": "تسجيل الدخول", "variant": "text", "color": "#7c3f5d" }, "tap": { "type": "navigate", "route": "/login", "navigation_type": "push" } }
+    ]
+  }
+}
+```
+
+`width: 320` is a fixed converter default — `ZoneDrawer` has no width prop. The drawer's
+`ContentLink` blocks carry `icon: "none"` deliberately: any other icon is dropped with a warning,
+because the engine `button` has no icon prop.
+
+### 15.4 Login — two inputs
+
+Same machinery as [§ 14.2](#142-login--form--cubitcall-authlogin), with `email` in place of `phone`
+and no "remember me" switch. The params are built from whatever fields the Section actually contains:
+
+```json
+{
+  "id": "button-35",
+  "type": "button",
+  "props": { "label": "دخول", "variant": "elevated", "height": 56 },
+  "tap": {
+    "type": "cubitCall",
+    "cubit": "auth",
+    "method": "login",
+    "requireValidForm": true,
+    "formId": "login-form",
+    "params": {
+      "email": { "source": "form", "field": "email" },
+      "password": { "source": "form", "field": "password" }
+    },
+    "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "go" }
+  }
+}
+```
+
+Both fields get `textDirection: "ltr"`; `email` additionally gets `keyboardType: "email"` +
+`validateEmail`, and `password` gets `obscureText: true`.
 ---
 
 *Source: `lib/transformer.ts` — last updated 2026-08-07. Web input source of truth: `docs/BLOCKS-MOBILE.md`. Earlier revisions per mobile team reviews (`CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`, `CONVERTER-SPEC-REVIEW-2026-07-05.md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*

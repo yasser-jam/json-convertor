@@ -871,16 +871,47 @@ describe("transformWebToMobile", () => {
       }
     });
 
-    it("exposes exactly one non-legacy preset — the canonical mobile example", () => {
+    it("exposes exactly the two canonical mobile examples as non-legacy", () => {
       const current = EXAMPLE_PRESETS.filter((p) => !p.legacy);
-      expect(current).toHaveLength(1);
-      expect(current[0]).toBe(EXAMPLE_PRESETS[0]);
+      expect(current).toHaveLength(2);
+      expect(current).toEqual([EXAMPLE_PRESETS[0], EXAMPLE_PRESETS[1]]);
       expect(current[0].label).toContain("3 pages");
+      expect(current[1].label).toContain("2 pages");
     });
 
     it("gives every legacy preset a reason", () => {
       for (const preset of EXAMPLE_PRESETS.filter((p) => p.legacy)) {
         expect(preset.legacyReason, preset.label).toBeTruthy();
+      }
+    });
+
+    it("every non-legacy preset uses only blocks from the mobile block set", () => {
+      // docs/BLOCKS-MOBILE.md — anything outside this list must not appear in a current example.
+      const MOBILE_BLOCK_SET = new Set([
+        "Accordion", "Blank", "ButtonGroup", "Chip", "ContentButton", "ContentDivider",
+        "ContentHeading", "ContentIcon", "ContentImage", "ContentInput", "ContentLink",
+        "ContentParagraph", "ContentSwitch", "Flex", "Grid", "Group", "ImageGallery",
+        "Section", "Testimonials", "VideoEmbed", "ZoneDrawer", "ZoneBottomSheet",
+      ]);
+      for (const preset of EXAMPLE_PRESETS.filter((p) => !p.legacy)) {
+        const seen = new Set<string>();
+        const walk = (node: unknown): void => {
+          if (Array.isArray(node)) return node.forEach(walk);
+          if (!node || typeof node !== "object") return;
+          const obj = node as Record<string, unknown>;
+          if (typeof obj.type === "string") seen.add(obj.type);
+          Object.values(obj).forEach(walk);
+        };
+        walk(JSON.parse(preset.json));
+        expect(seen.size, preset.label).toBeGreaterThan(0);
+        expect([...seen].filter((t) => !MOBILE_BLOCK_SET.has(t)), preset.label).toEqual([]);
+      }
+    });
+
+    it("every non-legacy preset converts without warnings", () => {
+      for (const preset of EXAMPLE_PRESETS.filter((p) => !p.legacy)) {
+        const result = transformWebToMobile(preset.json) as Extract<TransformResult, { success: true }>;
+        expect(result.warnings ?? [], preset.label).toEqual([]);
       }
     });
 
@@ -891,27 +922,6 @@ describe("transformWebToMobile", () => {
 
       it("converts with no warnings", () => {
         expect(result.warnings ?? []).toEqual([]);
-      });
-
-      it("uses only blocks from the mobile block set", () => {
-        // docs/BLOCKS-MOBILE.md — anything outside this list must not appear in the example.
-        const MOBILE_BLOCK_SET = new Set([
-          "Accordion", "Blank", "ButtonGroup", "Chip", "ContentButton", "ContentDivider",
-          "ContentHeading", "ContentIcon", "ContentImage", "ContentInput", "ContentLink",
-          "ContentParagraph", "ContentSwitch", "Flex", "Grid", "Group", "ImageGallery",
-          "Section", "Testimonials", "VideoEmbed", "ZoneDrawer", "ZoneBottomSheet",
-        ]);
-        const seen = new Set<string>();
-        const walk = (node: unknown): void => {
-          if (Array.isArray(node)) return node.forEach(walk);
-          if (!node || typeof node !== "object") return;
-          const obj = node as Record<string, unknown>;
-          if (typeof obj.type === "string") seen.add(obj.type);
-          Object.values(obj).forEach(walk);
-        };
-        walk(JSON.parse(EXAMPLE_PRESETS[0].json));
-        const offenders = [...seen].filter((t) => !MOBILE_BLOCK_SET.has(t));
-        expect(offenders).toEqual([]);
       });
 
       it("emits the three expected routes with / normalized to /home", () => {
@@ -992,6 +1002,151 @@ describe("transformWebToMobile", () => {
         expect((cardChildren[2].props as Record<string, unknown>).valuePath).toBe("item.price");
         expect(cardChildren[3].tap).toEqual({ type: "cubitCall", cubit: "cart", method: "addItem" });
       });
+    });
+
+    describe("canonical 2-page about-us example", () => {
+      const result = transformWebToMobile(EXAMPLE_PRESETS[1].json) as Extract<TransformResult, { success: true }>;
+      const output = result.output as Record<string, unknown>;
+      const pages = output.pages as Record<string, unknown>[];
+      const page = (route: string) => pages.find((p) => p.route === route) as Record<string, unknown>;
+      const theme = output.theme as Record<string, unknown>;
+
+      it("emits the two expected routes", () => {
+        expect(pages.map((p) => p.route)).toEqual(["/home", "/login"]);
+      });
+
+      it("resolves the serif bodyFont instead of forcing Tajawal on an Arabic store", () => {
+        expect((theme.typography as Record<string, unknown>).fontFamily).toBe("Amiri");
+      });
+
+      it("carries the custom palette, radii and button heights", () => {
+        expect(theme.colors).toMatchObject({ primary: "#7c3f5d", surface: "#faf3ee", text: "#2f2320", muted: "#8a7268" });
+        expect(theme.radius).toMatchObject({ sm: 10, md: 18, lg: 28, xl: 36 });
+        expect(theme.buttons).toMatchObject({
+          sm: { height: 40 }, md: { height: 52 }, lg: { height: 60 },
+        });
+      });
+
+      it("derives theme.spacing from the web side scale", () => {
+        // sm/md/lg ← spacingSideNarrow/Medium/Wide, xl ← spacingVerticalMedium
+        expect(theme.spacing).toEqual({ xs: 4, sm: 14, md: 20, lg: 40, xl: 56 });
+      });
+
+      it("puts the drawer on the end edge of both pages", () => {
+        for (const p of pages) {
+          const drawer = p.appDrawer as Record<string, unknown>;
+          expect(drawer, p.route as string).toBeDefined();
+          expect((drawer.props as Record<string, unknown>).drawerEdge).toBe("end"); // side: "right"
+        }
+      });
+
+      it("renders the about-us grid as full-width rows, not square grid cells", () => {
+        const gridSection = (page("/home").body as Record<string, unknown>[])[1];
+        const wrapper = gridSection.child as Record<string, unknown>;
+        // columnsMobile: 1 ⇒ a plain column, so cards keep their natural height.
+        expect(wrapper.type).toBe("column");
+        expect(wrapper).not.toHaveProperty("props.childAspectRatio");
+
+        const cells = wrapper.children as Record<string, unknown>[];
+        expect(cells).toHaveLength(3);
+        for (const cell of cells) {
+          // Each cell is a styled Group: container wrapping a column of heading + paragraph.
+          expect(cell.type).toBe("container");
+          const col = cell.child as Record<string, unknown>;
+          expect(col.type).toBe("column");
+          const kids = col.children as Record<string, unknown>[];
+          expect(kids).toHaveLength(2);
+          expect(kids.every((k) => k.type === "text")).toBe(true);
+          // Title above description.
+          expect((kids[0].props as Record<string, unknown>).fontWeight).toBe("semibold");
+          expect((kids[1].props as Record<string, unknown>).fontWeight).toBe("normal");
+        }
+      });
+
+      it("links the home CTA to the login route", () => {
+        const cta = ((page("/home").body as Record<string, unknown>[])[2].child as Record<string, unknown>);
+        const button = (cta.children as Record<string, unknown>[])[0];
+        expect(button.type).toBe("button");
+        expect(button.tap).toEqual({ type: "navigate", route: "/login", navigation_type: "push" });
+      });
+
+      it("submits the two login inputs through cubitCall auth.login", () => {
+        const p = page("/login");
+        expect(p.scroll).toBe("none");
+        const form = (p.body as Record<string, unknown>[])[0].child as Record<string, unknown>;
+        expect(form.type).toBe("form");
+
+        const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
+        const fields = children.filter((c) => c.type === "textFormField");
+        expect(fields.map((f) => (f.props as Record<string, unknown>).id)).toEqual(["email", "password"]);
+
+        const button = children.find((c) => c.type === "button")!;
+        expect(button.tap).toMatchObject({
+          type: "cubitCall",
+          cubit: "auth",
+          method: "login",
+          requireValidForm: true,
+          formId: "login-form",
+          params: {
+            email: { source: "form", field: "email" },
+            password: { source: "form", field: "password" },
+          },
+        });
+      });
+    });
+  });
+
+  describe("theme font mapping", () => {
+    const fontOf = (bodyFont: string, language = "ar") => {
+      const result = transformWebToMobile(JSON.stringify({
+        path: "/t", rootProps: { language, direction: language === "ar" ? "rtl" : "ltr", bodyFont }, blocks: [],
+      })) as Extract<TransformResult, { success: true }>;
+      const theme = (result.output as Record<string, unknown>).theme as Record<string, unknown>;
+      return (theme.typography as Record<string, unknown>).fontFamily;
+    };
+
+    it("resolves Arabic FONT_OPTIONS slugs to their family names", () => {
+      expect(fontOf("amiri")).toBe("Amiri");
+      expect(fontOf("cairo")).toBe("Cairo");
+      expect(fontOf("noto-naskh-arabic")).toBe("Noto Naskh Arabic");
+      expect(fontOf("scheherazade-new")).toBe("Scheherazade New");
+      expect(fontOf("el-messiri")).toBe("El Messiri");
+    });
+
+    it("falls back to Tajawal when an Arabic store picks a Latin-only face", () => {
+      expect(fontOf("dm-sans")).toBe("Tajawal");
+      expect(fontOf("lora")).toBe("Tajawal");
+    });
+
+    it("honours Latin faces on a non-Arabic store", () => {
+      expect(fontOf("lora", "en")).toBe("Lora");
+      expect(fontOf("playfair-display", "en")).toBe("Playfair Display");
+    });
+
+    it("falls back to Tajawal for unset, unknown and system slugs", () => {
+      expect(fontOf("")).toBe("Tajawal");
+      expect(fontOf("not-a-font")).toBe("Tajawal");
+      expect(fontOf("system")).toBe("Tajawal");
+      expect(fontOf("system", "en")).toBe("Inter");
+    });
+  });
+
+  describe("theme spacing mapping", () => {
+    const spacingOf = (rootProps: Record<string, unknown>) => {
+      const result = transformWebToMobile(JSON.stringify({ path: "/t", rootProps, blocks: [] })) as Extract<TransformResult, { success: true }>;
+      return ((result.output as Record<string, unknown>).theme as Record<string, unknown>).spacing;
+    };
+
+    it("keeps the previous fixed scale when the web spacing props are absent", () => {
+      expect(spacingOf({ language: "ar" })).toEqual({ xs: 4, sm: 10, md: 16, lg: 24, xl: 36 });
+    });
+
+    it("reads the side scale into sm/md/lg and spacingVerticalMedium into xl", () => {
+      expect(spacingOf({
+        language: "ar",
+        spacingSideNarrow: "14px", spacingSideMedium: "20px", spacingSideWide: "40px",
+        spacingVerticalMedium: "56px",
+      })).toEqual({ xs: 4, sm: 14, md: 20, lg: 40, xl: 56 });
     });
   });
 
