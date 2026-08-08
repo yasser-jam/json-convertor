@@ -24,6 +24,7 @@
 ## Do not use `none` when
 
 - Body uses `enableInnerScroll: false` on list/grid (current catalog pattern) — page will not scroll without changing those nodes or keeping `vertical`.
+- **The page is a static form (auth, splash, onboarding).** Reach for [`layout: "centered"`](15-page-layout-preset.md) instead. `none` only removes the scroll; it does not give the page a bounded height, inject a `container.expand`, or set the root column to `mainAxisSize: max`, so the form shrink-wraps under the app bar and overflows as soon as it is taller than the viewport. `layout: "centered"` does all three and is exempt from `static_page_overflow_risk`.
 
 ## Verification
 

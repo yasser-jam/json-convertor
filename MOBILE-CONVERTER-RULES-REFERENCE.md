@@ -1066,7 +1066,7 @@ Full converted app config shape:
 |-----------|-------|
 | Default scroll | `"vertical"` for catalog / long content |
 | Catalog grids | `enableInnerScroll: false` on `gridView` / `listView` |
-| Auth / splash | `scroll: "none"` |
+| Auth / splash | `layout: "centered"` — **not** `scroll: "none"`; see CONVERTER-OUTPUT-SPEC.md § 7.1 |
 | Route `/` | Normalized to `/home` |
 
 ---
@@ -1180,6 +1180,7 @@ Use this when validating your engine against converter output:
 ### Layout
 
 - [ ] Catalog pages: `scroll: vertical` + `enableInnerScroll: false` on grids
+- [ ] Auth pages: `layout: centered` + `container.expand`, no `scroll` key; `auth.login` params use `phone`, never `email`
 - [ ] Section backgrounds on `container.props.color`
 - [ ] Accordion → `expansionTile` children (not raw Accordion type)
 

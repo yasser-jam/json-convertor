@@ -79,11 +79,43 @@ let _drawerZoneKeys: Set<string> = new Set();
 type AuthForm = { formId: string; fields: string[] };
 let _activeAuthForm: AuthForm | null = null;
 
+/** Set when any Section on the current page became an auth form — drives the centered page shell. */
+let _pageHasAuthForm = false;
+
 /** Auth `buttonAction`s that submit the surrounding form rather than navigating. */
 const AUTH_FORM_ACTIONS = new Set(["login"]);
 
 /** Field ids that are never sent as auth params (confirmations, UI-only toggles). */
 const AUTH_PARAM_EXCLUDED_FIELDS = new Set(["passwordConfirm", "confirmPassword", "rememberMe"]);
+
+/**
+ * The one credential the engine's `auth` cubit can bind. Auth is a customer **phone/OTP** flow —
+ * `/api/v1/customer/auth/otp/request` + `CustomerOtpRequest`, see `docs/06-feature-auth.md` — so a
+ * login form built on an `email` / `username` field submits a param `AuthCubit` has no binding for.
+ * The button validates, the cubitCall fires, and the user is never signed in. Warn at conversion
+ * time rather than shipping a login screen that silently cannot log in.
+ */
+const AUTH_CREDENTIAL_FIELD = "phone";
+
+/** Non-credential fields that legitimately accompany the phone on an auth form. */
+const AUTH_SECONDARY_FIELDS = new Set(["password", "otpCode"]);
+
+/**
+ * Flags an auth form whose credential field is not `phone`. Not auto-corrected: renaming the
+ * merchant's field would leave an "email" label and `validateEmail` on what the cubit reads as a
+ * phone number, which fails later and less visibly than this warning does.
+ */
+function checkAuthCredentialField(action: string, fields: string[]): void {
+  if (fields.includes(AUTH_CREDENTIAL_FIELD)) return;
+  const found = fields.find(
+    (f) => !AUTH_SECONDARY_FIELDS.has(f) && !AUTH_PARAM_EXCLUDED_FIELDS.has(f)
+  );
+  addWarning(
+    `Auth "${action}" form has no "${AUTH_CREDENTIAL_FIELD}" field${found ? ` (found "${found}")` : ""}; ` +
+      `the engine's auth cubit is a phone/OTP flow and cannot bind any other credential — ` +
+      `use a ContentInput with name "${AUTH_CREDENTIAL_FIELD}" and inputType "tel"`
+  );
+}
 
 /**
  * Collects the ContentInput field ids in a block subtree, stopping at nested Sections
@@ -1491,6 +1523,10 @@ function transformSection(block: Record<string, unknown>, rootProps: Record<stri
     authAction && authFields.length > 0
       ? { formId: `${authAction}-form`, fields: authFields }
       : null;
+  if (authForm) {
+    _pageHasAuthForm = true;
+    checkAuthCredentialField(authAction as string, authFields);
+  }
 
   const templateGrid = transformProductsTemplateSection(block, rootProps);
   const prevAuthForm = _activeAuthForm;
@@ -3434,25 +3470,67 @@ function transformTheme(rootProps: Record<string, unknown>): Record<string, unkn
   };
 }
 
-function transformNavigation(rootProps: Record<string, unknown>, pages: Record<string, unknown>[]): Record<string, unknown> {
-  const tabs = [
-    { id: "tab-home", label: "الرئيسية", icon: "home", route: "/home" },
-    { id: "tab-categories", label: "الأقسام", icon: "grid_view", route: "/categories" },
-    { id: "tab-search", label: "بحث", icon: "search", route: "/search" },
-    { id: "tab-cart", label: "السلة", icon: "shopping_cart", route: "/cart" },
-    { id: "tab-profile", label: "حسابي", icon: "person", route: "/profile" },
-  ];
+/**
+ * Canonical tab chrome per route. A tab is only emitted for a route that has a real page, so this
+ * is a lookup for label/icon — not the tab list itself. Routes absent here fall back to the page's
+ * own title.
+ */
+const TAB_CATALOGUE: Record<string, { id: string; label: string; icon: string }> = {
+  "/home": { id: "tab-home", label: "الرئيسية", icon: "home" },
+  "/categories": { id: "tab-categories", label: "الأقسام", icon: "grid_view" },
+  "/search": { id: "tab-search", label: "بحث", icon: "search" },
+  "/cart": { id: "tab-cart", label: "السلة", icon: "shopping_cart" },
+  "/profile": { id: "tab-profile", label: "حسابي", icon: "person" },
+  "/products": { id: "tab-products", label: "المنتجات", icon: "grid_view" },
+  "/wishlist": { id: "tab-wishlist", label: "المفضلة", icon: "favorite" },
+  "/login": { id: "tab-login", label: "تسجيل الدخول", icon: "person" },
+};
 
-  const tabRoutes = new Set(tabs.map((t) => t.route));
-  const systemExcludeRoutes = [
-    "/splash", "/splash-carousel", "/auth/login", "/auth/otp-reset",
-    "/product/details", "/checkout", "/checkout/address",
-    "/checkout/payment", "/checkout/success", "/orders",
+/** Routes the engine owns; never tab roots, always shell-excluded. */
+const SYSTEM_EXCLUDE_ROUTES = [
+  "/splash", "/splash-carousel", "/auth/login", "/auth/otp-reset",
+  "/product/details", "/checkout", "/checkout/address",
+  "/checkout/payment", "/checkout/success", "/orders",
+];
+
+/** A Flutter bottom bar past five tabs is unreadable; the rest become shell-excluded routes. */
+const MAX_TABS = 5;
+
+function transformNavigation(rootProps: Record<string, unknown>, pages: Record<string, unknown>[]): Record<string, unknown> {
+  const systemRoutes = new Set(SYSTEM_EXCLUDE_ROUTES);
+  const pageRoutes = [...new Set(pages.map((p) => normalizeRoute((p.route as string) || "/")))];
+
+  // Tabs are derived from the pages that actually exist. A hardcoded list produces tabs that
+  // navigate to a route with no page behind it — every merchant without the full canonical
+  // catalogue (and both worked examples) shipped four dead tabs.
+  const candidates = pageRoutes.filter((r) => !systemRoutes.has(r) && !r.includes(":"));
+  const ordered = [
+    ...candidates.filter((r) => r === "/home"),
+    ...candidates.filter((r) => r !== "/home"),
   ];
-  const pageRoutes = pages
-    .map((p) => normalizeRoute((p.route as string) || "/"))
-    .filter((r) => !tabRoutes.has(r));
-  const shellExcludeRoutes = [...new Set([...systemExcludeRoutes, ...pageRoutes])];
+  const tabRoutes = ordered.slice(0, MAX_TABS);
+
+  if (ordered.length > MAX_TABS) {
+    addWarning(
+      `${ordered.length} pages are eligible for the tab bar; kept the first ${MAX_TABS} ` +
+        `(${tabRoutes.join(", ")}) and shell-excluded the rest — a bottom bar holds ${MAX_TABS} tabs`
+    );
+  }
+
+  const titleByRoute = new Map(
+    pages.map((p) => [normalizeRoute((p.route as string) || "/"), (p.title as string) || ""])
+  );
+  const tabs = tabRoutes.map((route) => {
+    const canonical = TAB_CATALOGUE[route];
+    if (canonical) return { ...canonical, route };
+    const slug = route.replace(/^\//, "").replace(/[/:]/g, "-") || "page";
+    return { id: `tab-${slug}`, label: titleByRoute.get(route) || slug, icon: "article", route };
+  });
+
+  const tabRouteSet = new Set(tabRoutes);
+  const shellExcludeRoutes = [
+    ...new Set([...SYSTEM_EXCLUDE_ROUTES, ...pageRoutes.filter((r) => !tabRouteSet.has(r))]),
+  ];
 
   return {
     type: "tabs",
@@ -3549,6 +3627,7 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
   _drawerZoneKeys = new Set();
   _cartTemplateEmitted = false;
   _activeAuthForm = null;
+  _pageHasAuthForm = false;
 
   // Separate zone / shell blocks from body blocks
   const bodyBlocks: Record<string, unknown>[] = [];
@@ -3684,12 +3763,21 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
     );
   }
 
+  const background = (page.background as string) || "#ffffff";
+
+  // An auth page is a full-viewport, non-scrolling shell. `layout: "centered"` is the only way to
+  // ask for one: the engine forces `pageScroll: none`, sets the root column to `mainAxisSize: max`
+  // + `crossAxisAlignment: stretch`, and exempts the page from the `viewport_center_without_expand`
+  // / `static_page_overflow_risk` validators. A bare `scroll: "none"` does none of that — it just
+  // removes the scroll, leaving a shrink-wrapped form pinned under the app bar that overflows as
+  // soon as the body is taller than the screen. See docs/engine/builder-specs/08-page-scroll.md
+  // and 15-page-layout-preset.md.
   const pageNode: Record<string, unknown> = {
     id: `page-${slugPart}`,
     route: path,
     title: label,
-    background: (page.background as string) || "#ffffff",
-    scroll: (page.scroll as string) || "vertical",
+    background,
+    ...(_pageHasAuthForm ? { layout: "centered" } : { scroll: (page.scroll as string) || "vertical" }),
     appBar,
     body,
   };
@@ -3702,9 +3790,33 @@ function transformPage(page: Record<string, unknown>): Record<string, unknown> {
       pageNode.footer = footerNode;
     }
   }
+  // After the footer spacer, so it is centered with the rest of the body.
+  if (_pageHasAuthForm) pageNode.body = [buildCenteredViewport(body, background)];
   if (appDrawer) pageNode.appDrawer = appDrawer;
 
   return pageNode;
+}
+
+/**
+ * The body shell `layout: "centered"` expects: an `expand` container to give the page a bounded
+ * height, and a `mainAxisSize: max` column that centers its children inside it. Mirrors the
+ * `/auth/login` shape the engine ships in `mobile_production_v2.json`.
+ */
+function buildCenteredViewport(
+  body: Record<string, unknown>[],
+  background: string
+): Record<string, unknown> {
+  return {
+    id: generateId("page-expand"),
+    type: "container",
+    props: { expand: true, color: background },
+    child: {
+      id: generateId("page-center"),
+      type: "column",
+      props: flexProps("center", "stretch", { mainAxisSize: "max" }),
+      children: body,
+    },
+  };
 }
 
 function buildFooterLinkNode(
@@ -4162,11 +4274,12 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
         // The Section holds ContentInput fields *and* a ContentButton with
         // buttonAction "login", so the converter wraps its content in a `form` node and the
         // button submits it via cubitCall auth.login (requireValidForm + formId + form params).
-        // `scroll: "none"` keeps the auth screen from scrolling (§7 page rules).
+        // No `scroll` here: an auth form makes the page emit `layout: "centered"` (§7 page rules).
+        // The credential is `phone` / `inputType: "tel"` — the engine's auth cubit is phone/OTP.
         {
           path: "/login", slug: "/login", name: "تسجيل الدخول", link: "/login",
           title: "تسجيل الدخول", description: "الدخول إلى حسابك", iconName: "user",
-          isCustom: true, scroll: "none",
+          isCustom: true,
           content: [{
             type: "Section",
             props: {
@@ -4400,10 +4513,12 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
         },
 
         // ── 2. Login — two inputs + a login button ────────────────────────────
+        // Same machinery as the commerce preset, on the custom theme. The credential stays
+        // `phone` / `inputType: "tel"` regardless of theme — auth is a phone/OTP flow.
         {
           path: "/login", slug: "/login", name: "تسجيل الدخول", link: "/login",
           title: "تسجيل الدخول", description: "الدخول إلى حسابك", iconName: "user",
-          isCustom: true, scroll: "none",
+          isCustom: true,
           content: [{
             type: "Section",
             props: {
@@ -4413,7 +4528,7 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
               columns: 1, columnsMobile: 1, gridGap: "20px",
               content: [
                 { type: "ContentHeading", props: { text: "تسجيل الدخول", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-primary" } },
-                { type: "ContentInput", props: { label: "البريد الإلكتروني", name: "email", inputType: "email", placeholder: "you@example.com", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentInput", props: { label: "رقم الهاتف", name: "phone", inputType: "tel", placeholder: "09xxxxxxxx", required: true, prependIcon: "none", inputAction: "" } },
                 { type: "ContentInput", props: { label: "كلمة المرور", name: "password", inputType: "password", placeholder: "••••••••", required: true, prependIcon: "none", inputAction: "" } },
                 { type: "ContentButton", props: { label: "دخول", align: "center", destinationType: "action", buttonAction: "login", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
               ],

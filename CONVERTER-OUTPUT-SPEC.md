@@ -162,7 +162,7 @@ Every `"type"` field in converter output is one of these registered engine primi
 
 Web block type names (`Button`, `Section`, `ContentParagraph`, etc.) **never appear** in converter output.
 
-> `**scaffold` is engine-internal — never emit it.** Page background and scroll are controlled by page-level keys (`background`, `scroll: "vertical" | "none"`), not by a node in `body[]`.
+> `**scaffold` is engine-internal — never emit it.** Page background and scroll are controlled by page-level keys (`background`, `scroll: "vertical" | "none"`, `layout: "centered"`), not by a node in `body[]`. For a static full-screen form, `layout: "centered"` — not `scroll: "none"` ([§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none)).
 
 ---
 
@@ -2451,6 +2451,9 @@ When the input is a page object or array of page objects, the converter emits a 
 }
 ```
 
+The five tabs above are what a site with all five of those pages gets. `navigation.tabs` is derived
+from `pages[]`, so a smaller site gets a smaller bar — see [§ 7.3](#73-tabs-are-derived-from-the-pages).
+
 ### Page rules
 
 
@@ -2458,12 +2461,147 @@ When the input is a page object or array of page objects, the converter emits a 
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Route `/`            | Normalized to `/home`                                                                                                                                                                                                                                              |
 | Default scroll       | `"vertical"`                                                                                                                                                                                                                                                       |
-| Auth / splash pages  | Set `"scroll": "none"` on page input                                                                                                                                                                                                                               |
+| Auth / splash pages  | `"layout": "centered"` and **no `scroll` key** — emitted automatically when the page holds an auth form. See [§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none). **Never** hand-author `"scroll": "none"` for a static form                     |
 | `background` default | `"#ffffff"`                                                                                                                                                                                                                                                        |
 | Page chrome          | Use page-level `background` + `scroll` — **never** emit a `scaffold` node in `body[]`                                                                                                                                                                              |
 | Pinned CTA bars      | `pages[].footer` — **never** end of `body[]` and never `stack` + `stackLayer: "positioned"` for page footers                                                                                                                                                       |
+| `navigation.tabs`    | **Derived from `pages[]`** — one tab per page route that exists, `/home` first, capped at 5. Never a fixed list: a tab whose route has no page is a dead tab. See [§ 7.3](#73-tabs-are-derived-from-the-pages)                                                     |
 | `shellExcludeRoutes` | **Generated** from system routes + every `pages[].route` that is not a tab root — never copy a static list verbatim per merchant. A route missing from `shellExcludeRoutes` crashes with a duplicate-page-key assert when pushed from another shell-excluded page. |
 
+
+### 7.1 Auth and splash pages use `layout: "centered"`, not `scroll: "none"`
+
+The two look interchangeable and are not. Only `layout: "centered"` produces a working full-viewport
+form page.
+
+| | `"scroll": "none"` | `"layout": "centered"` |
+| --- | --- | --- |
+| Outer page scroll | Off | Off (engine forces `pageScroll: none`) |
+| Root column | Left as authored | `mainAxisSize: max` + `crossAxisAlignment: stretch` |
+| Expand container | **Not injected** | Injected if `body` has none |
+| Layout validators | `static_page_overflow_risk` fires | Exempt |
+| Body taller than screen | **Overflows** — nothing scrolls, submit button clipped | Fits; content centres in the viewport |
+
+`scroll: "none"` only removes the scroll. It does not give the page a bounded height to lay out
+against, so a static form shrink-wraps under the app bar and anything past the fold is unreachable —
+there is no scroll left to reach it with. Reserve `none` for a body whose own child scrolls
+(`gridView` / `listView` with `enableInnerScroll: true`); see
+[`docs/engine/builder-specs/08-page-scroll.md`](docs/engine/builder-specs/08-page-scroll.md).
+
+**The converter emits this automatically.** A page holding an auth form (a `Section` with
+`ContentInput` fields plus a `login` `ContentButton`) gets `layout: "centered"`, the `scroll` key is
+dropped even if the page input set one, and `body[]` is wrapped in the shell the preset expects:
+
+```json
+{
+  "id": "page-login",
+  "route": "/login",
+  "background": "#ffffff",
+  "layout": "centered",
+  "appBar": { "…": "…" },
+  "body": [
+    {
+      "id": "page-expand-84",
+      "type": "container",
+      "props": { "expand": true, "color": "#ffffff" },
+      "child": {
+        "id": "page-center-85",
+        "type": "column",
+        "props": { "mainAxisAlignment": "center", "crossAxisAlignment": "stretch", "mainAxisSize": "max" },
+        "children": [ { "…": "the Section containers" } ]
+      }
+    }
+  ]
+}
+```
+
+The `expand` container is what gives the column a bounded height; `mainAxisSize: max` +
+`mainAxisAlignment: center` is what centres the form under the app bar. Reference:
+[`docs/engine/builder-specs/15-page-layout-preset.md`](docs/engine/builder-specs/15-page-layout-preset.md)
+and the `/auth/login` page in `mobile_production_v2.json`.
+
+### 7.2 `auth.login` binds `phone` — never `email`
+
+The engine's auth is a **customer phone/OTP flow**: `/api/v1/customer/auth/otp/request` and
+`/verify`, request bodies `CustomerOtpRequest` / `CustomerOtpVerifyRequest`, both keyed on phone
+([`docs/06-feature-auth.md`](docs/06-feature-auth.md)). `AuthCubit.login` has no binding for any
+other credential.
+
+So a login form built on an email or username field produces a `cubitCall` the cubit cannot read:
+the form validates, the call fires, and the user is never signed in. Nothing errors — it just
+silently does nothing, which is why this is worth catching at authoring time.
+
+| | Web input | Mobile output |
+| --- | --- | --- |
+| ✅ | `ContentInput` `name: "phone"`, `inputType: "tel"` | `textFormField` `id: "phone"` + `keyboardType: "phone"` + `validatePhone`; param `phone` |
+| ❌ | `ContentInput` `name: "email"`, `inputType: "email"` | param `email` — **dead**; converter warns |
+
+The converter warns rather than renaming the field: silently rewriting `email` → `phone` would leave
+an "email" label and `validateEmail` on a field the cubit reads as a phone number, which fails later
+and less visibly. Fix the web input.
+
+```
+Auth "login" form has no "phone" field (found "email"); the engine's auth cubit is a
+phone/OTP flow and cannot bind any other credential — use a ContentInput with name
+"phone" and inputType "tel"
+```
+
+`password` and `otpCode` are the only other fields the login form should carry.
+`passwordConfirm` / `confirmPassword` / `rememberMe` are collected for validity and excluded from
+`params` ([§ 6.34](#auth-forms--the-form-wrapper)).
+
+### 7.3 Tabs are derived from the pages
+
+`navigation.tabs` used to be a fixed five-route list — `/home`, `/categories`, `/search`, `/cart`,
+`/profile` — emitted for every conversion. Any merchant without all five pages shipped tabs that
+navigate to a route with no page behind them. Both worked examples did.
+
+**The rule now:** one tab per page route, `/home` first, everything else in page order.
+
+| Step | Behaviour |
+| --- | --- |
+| Candidates | Every `pages[].route`, minus engine-owned routes (`/splash`, `/checkout*`, `/orders`, `/auth/*`, `/product/details`) and minus dynamic routes (`:param`) |
+| Order | `/home` first, then page order |
+| Cap | First 5. Overflow is shell-excluded and warned about |
+| Label / icon | Canonical chrome if the route is known (table below); otherwise the page's own `title` and `icon: "article"` |
+| `shellExcludeRoutes` | Engine routes + every page route that did **not** become a tab |
+
+Canonical chrome:
+
+| Route | `id` | `label` | `icon` |
+| --- | --- | --- | --- |
+| `/home` | `tab-home` | الرئيسية | `home` |
+| `/categories` | `tab-categories` | الأقسام | `grid_view` |
+| `/search` | `tab-search` | بحث | `search` |
+| `/cart` | `tab-cart` | السلة | `shopping_cart` |
+| `/profile` | `tab-profile` | حسابي | `person` |
+| `/products` | `tab-products` | المنتجات | `grid_view` |
+| `/wishlist` | `tab-wishlist` | المفضلة | `favorite` |
+| `/login` | `tab-login` | تسجيل الدخول | `person` |
+
+A two-page site gets a two-tab bar:
+
+```json
+"navigation": {
+  "type": "tabs",
+  "initialRoute": "/splash",
+  "shellExcludeRoutes": ["/splash", "/splash-carousel", "/auth/login", "…", "/orders"],
+  "tabs": [
+    { "id": "tab-home", "label": "الرئيسية", "icon": "home", "route": "/home" },
+    { "id": "tab-login", "label": "تسجيل الدخول", "icon": "person", "route": "/login" }
+  ]
+}
+```
+
+> **`/login` as a tab.** A page route that exists becomes a tab, `/login` included. Note the tension
+> with the auth rule in [§ 6.34](#auth-forms--the-form-wrapper): login success navigates with
+> `navigation_type: "go"` precisely so the user cannot go back into the login screen, and a
+> persistent tab puts it one tap away again. That is fine for a small site whose login *is* a
+> destination. If login should only be reachable from the drawer, drop `/login` from `pages[]` and
+> point the drawer link at the engine's native `/auth/login` instead.
+
+The engine's own routes stay shell-excluded regardless — `/auth/login` is a different route from a
+merchant page at `/login`.
 
 ### Page-level `footer`
 
@@ -2962,6 +3100,7 @@ The converter accumulates warnings and returns them in `{ success: true, output:
 - `"SiteHeader.rightSlot blocks [<types>] have no appBar equivalent…"`
 - `"ContentLink icon \"<name>\" dropped; the engine `button` has no icon prop"`
 - `"ContentInput \"<id>\" uses inputAction \"search_products\"…"`
+- `"Auth \"login\" form has no \"phone\" field (found \"<id>\"); the engine's auth cubit is a phone/OTP flow and cannot bind any other credential…"` — [§ 7.2](#72-authlogin-binds-phone--never-email)
 - `"ContentSwitch \"<id>\" uses switchAction \"<action>\"; the mobile field is emitted as a plain switchField without store wiring…"`
 - `"ContentSwitch \"<id>\" helperText dropped; the engine switchField has no helper-text prop"`
 - `"Overlay zone \"<key>\" is never opened on route \"<route>\"; nothing triggers it, so its content was dropped…"`
@@ -3004,6 +3143,9 @@ Use this checklist before sending converter output to the engine.
 - `form` uses `child` OR `children`, not both
 - Every `textFormField` / `switchField` sits inside a `form` — a field with no enclosing form cannot be submitted
 - Auth submit (`cubitCall auth.login`) carries `requireValidForm: true` + `formId` + `source: "form"` params
+- `auth.login` params contain **`phone`**, never `email` / `username` — the auth cubit is a phone/OTP flow ([§ 7.2](#72-authlogin-binds-phone--never-email))
+- An auth page is `layout: "centered"` with **no `scroll` key**, and `body[0]` is a `container` `expand: true` wrapping a `column` `mainAxisSize: max` ([§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none))
+- `scroll: "none"` appears only on pages whose body has an inner scroller (`enableInnerScroll: true`) — never on a static form
 - `switchField` initial state is the **string** `"true"` / `"false"`, never a boolean
 - `textDirection: "ltr"` on email, phone, password and OTP fields
 
@@ -3034,6 +3176,8 @@ Use this checklist before sending converter output to the engine.
 - Web boolean toggles → `switchField` (value stored as `"true"`/`"false"` strings)
 - AppBar gradient: `backgroundGradient: true` or the full explicit hex **pair** — never a single hex gradient prop
 - Every generated non-tab route appears in **both** `pages[]` and `navigation.shellExcludeRoutes`
+- Every `navigation.tabs[].route` has a matching `pages[].route` — a tab with no page behind it navigates nowhere ([§ 7.3](#73-tabs-are-derived-from-the-pages))
+- `navigation.tabs` holds at most 5 entries, `/home` first
 - No email fields in address forms — guest email goes to `/checkout` contact card → `placeOrder.params.guestEmail`
 
 ### API / data
@@ -3174,7 +3318,7 @@ block set.
 | Page       | Route (in) | Route (out) | What it exercises |
 | ---------- | ---------- | ----------- | ----------------- |
 | Home       | `/`        | `/home`     | **Static blocks only.** `ContentHeading`, `ContentParagraph`, `ContentImage`, `ContentIcon`, `ContentDivider`, `Flex`, `Group`, `ImageGallery` (slider), `VideoEmbed`, `Testimonials`, `Accordion`. No data binding, no cubit calls |
-| Login      | `/login`   | `/login`    | **A real form.** `ContentInput` × 2 + `ContentSwitch` + `ContentButton` (`buttonAction: "login"`) inside one `Section` ⇒ `form` wrapper + `cubitCall auth.login` |
+| Login      | `/login`   | `/login`    | **A real form.** `ContentInput` × 2 (`phone` + `password`) + `ContentSwitch` + `ContentButton` (`buttonAction: "login"`) inside one `Section` ⇒ `form` wrapper + `cubitCall auth.login`, page on the `layout: "centered"` shell |
 | Products   | `/products`| `/products` | **Products Grid preset.** One unexpanded card-template `Group` ⇒ `gridView` + `itemBuilder.repeat` over the collection request |
 
 
@@ -3191,20 +3335,24 @@ the page-level `appDrawer` on **all three** pages and turns on `appBar.showMenu`
   "navigation": {
     "type": "tabs",
     "initialRoute": "/splash",
-    "shellExcludeRoutes": ["/splash", "…", "/orders", "/login", "/products"],
-    "tabs": [ { "id": "tab-home", "route": "/home" }, "…" ]
+    "shellExcludeRoutes": ["/splash", "…", "/checkout", "/orders"],
+    "tabs": [
+      { "id": "tab-home",     "label": "الرئيسية",      "icon": "home",      "route": "/home" },
+      { "id": "tab-login",    "label": "تسجيل الدخول", "icon": "person",    "route": "/login" },
+      { "id": "tab-products", "label": "المنتجات",     "icon": "grid_view", "route": "/products" }
+    ]
   },
   "pages": [
     { "id": "page-home",     "route": "/home",     "scroll": "vertical", "appBar": { }, "body": [ ], "appDrawer": { } },
-    { "id": "page-login",    "route": "/login",    "scroll": "none",     "appBar": { }, "body": [ ], "appDrawer": { } },
+    { "id": "page-login",    "route": "/login",    "layout": "centered", "appBar": { }, "body": [ ], "appDrawer": { } },
     { "id": "page-products", "route": "/products", "scroll": "vertical", "appBar": { }, "body": [ ], "appDrawer": { } }
   ]
 }
 ```
 
-Note `/login` and `/products` in `shellExcludeRoutes` — they are pages but not tab roots, so they are
-generated into the exclude list ([§ 7 page rules](#page-rules)). `/` normalises to `/home`, which *is*
-a tab root and so is not excluded.
+Three pages, three tabs — the bar is derived from `pages[]`, so no tab points at a route this app
+does not have ([§ 7.3](#73-tabs-are-derived-from-the-pages)). `shellExcludeRoutes` therefore holds
+only the engine's own routes; `/` normalises to `/home`, which is the first tab.
 
 ### 14.1 Home — static blocks
 
@@ -3296,7 +3444,6 @@ content in a `form` and the button submits it instead of navigating
 ```json
 {
   "path": "/login", "slug": "/login", "name": "تسجيل الدخول", "title": "تسجيل الدخول",
-  "scroll": "none",
   "content": [{
     "type": "Section",
     "props": {
@@ -3326,7 +3473,7 @@ content in a `form` and the button submits it instead of navigating
   "route": "/login",
   "title": "تسجيل الدخول",
   "background": "#ffffff",
-  "scroll": "none",
+  "layout": "centered",
   "appBar": {
     "id": "login-app-bar",
     "type": "appBar",
@@ -3337,6 +3484,15 @@ content in a `form` and the button submits it instead of navigating
     }
   },
   "body": [
+   {
+    "id": "page-expand-84",
+    "type": "container",
+    "props": { "expand": true, "color": "#ffffff" },
+    "child": {
+     "id": "page-center-85",
+     "type": "column",
+     "props": { "mainAxisAlignment": "center", "crossAxisAlignment": "stretch", "mainAxisSize": "max" },
+     "children": [
     {
       "id": "section-container-77",
       "type": "container",
@@ -3383,6 +3539,9 @@ content in a `form` and the button submits it instead of navigating
         }
       }
     }
+     ]
+    }
+   }
   ],
   "appDrawer": { "…": "from the ZoneDrawer site zone" }
 }
@@ -3390,6 +3549,11 @@ content in a `form` and the button submits it instead of navigating
 
 Points worth noting:
 
+- The page is `layout: "centered"` with **no `scroll` key**, and `body[]` is the `expand` container +
+  centered column shell. The converter adds both because the page holds an auth form — do not
+  hand-author `scroll: "none"` here ([§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none)).
+- The credential is `phone`, never `email` — the engine's auth cubit is a phone/OTP flow
+  ([§ 7.2](#72-authlogin-binds-phone--never-email)).
 - The `form` sits **inside** the Section's `container` and **outside** the `column` — chrome stays on
   the container, field scope on the form.
 - `rememberMe` is collected for form validity but **excluded from `params`** — it is a UI preference,
@@ -3398,8 +3562,6 @@ Points worth noting:
   push — you must not be able to go "back" into a login screen).
 - `password` gets `textDirection: "ltr"` and `obscureText: true`; `tel` gets `keyboardType: "phone"` +
   `validatePhone`.
-- `scroll: "none"` came from the page input — set it on every auth screen
-  ([§ 7 page rules](#page-rules)).
 - The engine requires an `auth` cubit exposing `login`. A `login` button with **no** sibling inputs
   still emits the old navigate stub to the native `/auth/login` screen.
 
@@ -3517,10 +3679,30 @@ exercises **theming, the drawer zone, and the two ways to build a grid**.
 | Page     | Route (in) | Route (out) | What it exercises |
 | -------- | ---------- | ----------- | ----------------- |
 | About us | `/`        | `/home`     | A title `Section`, then a **grid `Section`** (`columns: 2` / `columnsMobile: 1`) whose cells are `Group` blocks stacking a title over a description, then a `ContentButton` linking to `/login` |
-| Login    | `/login`   | `/login`    | Two `ContentInput` fields + a `login` `ContentButton` ⇒ `form` + `cubitCall auth.login` |
+| Login    | `/login`   | `/login`    | `phone` + `password` `ContentInput` + a `login` `ContentButton` ⇒ `form` + `cubitCall auth.login`, on the `layout: "centered"` shell |
 
 
 One `ZoneDrawer` in `zones` (`side: "right"`) becomes the `appDrawer` on **both** pages.
+
+Two pages means a **two-tab bar** — this is the clearest case for why the tab list is derived from
+`pages[]` rather than fixed ([§ 7.3](#73-tabs-are-derived-from-the-pages)). A content site has no
+`/categories`, `/search`, `/cart` or `/profile`, so a fixed five-tab bar would leave four tabs
+navigating nowhere:
+
+```json
+"navigation": {
+  "type": "tabs",
+  "initialRoute": "/splash",
+  "shellExcludeRoutes": ["/splash", "/splash-carousel", "/auth/login", "…", "/orders"],
+  "tabs": [
+    { "id": "tab-home", "label": "الرئيسية", "icon": "home", "route": "/home" },
+    { "id": "tab-login", "label": "تسجيل الدخول", "icon": "person", "route": "/login" }
+  ]
+}
+```
+
+Neither page route is shell-excluded — both are tab roots. The list keeps only the engine's own
+routes, `/auth/login` among them, which is a different route from this site's `/login` page.
 
 ### 15.1 Theme — what the root props actually move
 
@@ -3743,8 +3925,11 @@ because the engine `button` has no icon prop.
 
 ### 15.4 Login — two inputs
 
-Same machinery as [§ 14.2](#142-login--form--cubitcall-authlogin), with `email` in place of `phone`
-and no "remember me" switch. The params are built from whatever fields the Section actually contains:
+Same machinery as [§ 14.2](#142-login--form--cubitcall-authlogin), minus the "remember me" switch.
+The theme changes; the auth contract does not. The credential is still `phone` / `inputType: "tel"`,
+and the page is still `layout: "centered"` — both are engine requirements, not styling choices
+([§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none),
+[§ 7.2](#72-authlogin-binds-phone--never-email)).
 
 ```json
 {
@@ -3758,7 +3943,7 @@ and no "remember me" switch. The params are built from whatever fields the Secti
     "requireValidForm": true,
     "formId": "login-form",
     "params": {
-      "email": { "source": "form", "field": "email" },
+      "phone": { "source": "form", "field": "phone" },
       "password": { "source": "form", "field": "password" }
     },
     "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "go" }
@@ -3766,8 +3951,16 @@ and no "remember me" switch. The params are built from whatever fields the Secti
 }
 ```
 
-Both fields get `textDirection: "ltr"`; `email` additionally gets `keyboardType: "email"` +
-`validateEmail`, and `password` gets `obscureText: true`.
+Both fields get `textDirection: "ltr"`; `phone` additionally gets `keyboardType: "phone"` +
+`validatePhone`, and `password` gets `obscureText: true`.
+
+> **This example used to be wrong.** It shipped an `email` credential and a bare `scroll: "none"`
+> page, which converts cleanly and renders a login screen that cannot log in and overflows on a
+> short viewport. Params are built from whatever fields the Section contains, so the converter will
+> happily emit a dead param — it now warns instead of staying silent. If you are copying an older
+> revision of this section, re-read [§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none)
+> and [§ 7.2](#72-authlogin-binds-phone--never-email) first.
+
 ---
 
 *Source: `lib/transformer.ts` — last updated 2026-08-07. Web input source of truth: `docs/BLOCKS-MOBILE.md`. Earlier revisions per mobile team reviews (`CONVERTER-SPEC-REVIEW-2026-07-01.md`, `CONVERTER-SPEC-REVIEW-2026-07-03 (1).md`, `CONVERTER-SPEC-REVIEW-2026-07-05.md`). Report mismatches with: block type name, web input sample, what the converter currently emits, and what your renderer expects.*

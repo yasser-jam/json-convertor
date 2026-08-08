@@ -34,7 +34,14 @@ Web `Button.props.href` (legacy) → direct path after table mapping.
 
 ## Default tab shell
 
-When converting a full storefront, emit `navigation` matching prod pattern:
+**The tab list is derived from `pages[]`, not fixed.** One tab per page route that exists, `/home`
+first, engine-owned and dynamic routes filtered out, capped at 5. The five tabs below are what a
+*full storefront* produces because it has all five of those pages — a two-page content site produces
+two tabs. A tab whose route has no page behind it navigates nowhere, which is what a hardcoded list
+guarantees for every merchant short of the full catalogue. See `CONVERTER-OUTPUT-SPEC.md` § 7.3 for
+the canonical label/icon table and the fallback for unknown routes.
+
+When converting a full storefront, `navigation` therefore matches the prod pattern:
 
 ```json
 {

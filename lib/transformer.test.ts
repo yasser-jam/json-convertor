@@ -1,6 +1,24 @@
 import { describe, it, expect } from "vitest";
 import { transformWebToMobile, EXAMPLE_PRESETS, TransformResult } from "./transformer";
 
+type Ok = Extract<TransformResult, { success: true }>;
+type Node = Record<string, unknown>;
+
+const pages = (result: Ok) => (result.output as Node).pages as Node[];
+
+/**
+ * A page's Section nodes, unwrapped from the `layout: "centered"` shell if the converter added one
+ * (`container expand` → `column mainAxisSize: max` → Sections). Auth pages get that shell; every
+ * other page keeps its Sections directly in `body`.
+ */
+function sectionsOf(page: Node): Node[] {
+  const body = page.body as Node[];
+  if (page.layout !== "centered") return body;
+  return ((body[0] as Node).child as Node).children as Node[];
+}
+
+const pageBody = (result: Ok, index = 0): Node[] => sectionsOf(pages(result)[index]);
+
 describe("transformWebToMobile", () => {
   describe("input validation", () => {
     it("rejects invalid JSON", () => {
@@ -928,12 +946,18 @@ describe("transformWebToMobile", () => {
         expect(pages.map((p) => p.route)).toEqual(["/home", "/login", "/products"]);
       });
 
-      it("excludes the two non-tab routes from the navigation shell", () => {
+      it("builds one tab per page and shell-excludes no page route", () => {
         const nav = (result.output as Record<string, unknown>).navigation as Record<string, unknown>;
+        expect(nav.tabs).toEqual([
+          { id: "tab-home", label: "الرئيسية", icon: "home", route: "/home" },
+          { id: "tab-login", label: "تسجيل الدخول", icon: "person", route: "/login" },
+          { id: "tab-products", label: "المنتجات", icon: "grid_view", route: "/products" },
+        ]);
         const excluded = nav.shellExcludeRoutes as string[];
-        expect(excluded).toContain("/login");
-        expect(excluded).toContain("/products");
-        expect(excluded).not.toContain("/home");
+        for (const route of ["/home", "/login", "/products"]) {
+          expect(excluded, route).not.toContain(route);
+        }
+        expect(excluded).toContain("/checkout");
       });
 
       it("gives every page the appDrawer from the ZoneDrawer site zone", () => {
@@ -954,8 +978,7 @@ describe("transformWebToMobile", () => {
 
       it("login page wraps its fields in a form that the login button submits", () => {
         const p = page("/login");
-        expect(p.scroll).toBe("none");
-        const section = (p.body as Record<string, unknown>[])[0];
+        const section = sectionsOf(p)[0];
         const form = section.child as Record<string, unknown>;
         expect(form.type).toBe("form");
         expect(form.props).toMatchObject({ formId: "login-form", id: "login-form" });
@@ -977,7 +1000,7 @@ describe("transformWebToMobile", () => {
       });
 
       it("login page emits ltr obscured password and a switchField", () => {
-        const form = ((page("/login").body as Record<string, unknown>[])[0].child as Record<string, unknown>);
+        const form = sectionsOf(page("/login"))[0].child as Record<string, unknown>;
         const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
         const password = children.find((c) => (c.props as Record<string, unknown>).id === "password")!;
         expect(password.type).toBe("textFormField");
@@ -1071,14 +1094,12 @@ describe("transformWebToMobile", () => {
       });
 
       it("submits the two login inputs through cubitCall auth.login", () => {
-        const p = page("/login");
-        expect(p.scroll).toBe("none");
-        const form = (p.body as Record<string, unknown>[])[0].child as Record<string, unknown>;
+        const form = sectionsOf(page("/login"))[0].child as Record<string, unknown>;
         expect(form.type).toBe("form");
 
         const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
         const fields = children.filter((c) => c.type === "textFormField");
-        expect(fields.map((f) => (f.props as Record<string, unknown>).id)).toEqual(["email", "password"]);
+        expect(fields.map((f) => (f.props as Record<string, unknown>).id)).toEqual(["phone", "password"]);
 
         const button = children.find((c) => c.type === "button")!;
         expect(button.tap).toMatchObject({
@@ -1088,7 +1109,7 @@ describe("transformWebToMobile", () => {
           requireValidForm: true,
           formId: "login-form",
           params: {
-            email: { source: "form", field: "email" },
+            phone: { source: "form", field: "phone" },
             password: { source: "form", field: "password" },
           },
         });
@@ -1192,10 +1213,8 @@ describe("transformWebToMobile", () => {
         blocks: [{ type: "Section", props: { content } }],
       })) as Extract<TransformResult, { success: true }>;
 
-    const sectionChild = (result: Extract<TransformResult, { success: true }>) => {
-      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
-      return (body[0] as Record<string, unknown>).child as Record<string, unknown>;
-    };
+    const sectionChild = (result: Extract<TransformResult, { success: true }>) =>
+      (pageBody(result)[0] as Record<string, unknown>).child as Record<string, unknown>;
 
     it("falls back to the navigate stub when the login button has no sibling inputs", () => {
       const result = loginPage([
@@ -1246,13 +1265,119 @@ describe("transformWebToMobile", () => {
           { type: "Section", props: { content: [{ type: "ContentInput", props: { name: "newsletter" } }] } },
         ],
       })) as Extract<TransformResult, { success: true }>;
-      const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
+      const body = pageBody(result);
       expect((body[0].child as Record<string, unknown>).type).toBe("form");
       expect((body[1].child as Record<string, unknown>).type).toBe("column");
 
       const children = ((body[0].child as Record<string, unknown>).child as Record<string, unknown>).children as Record<string, unknown>[];
       const tap = children.find((c) => c.type === "button")!.tap as Record<string, unknown>;
       expect(Object.keys(tap.params as Record<string, unknown>)).toEqual(["phone"]);
+    });
+
+    // Regression: a bare `scroll: "none"` leaves the form shrink-wrapped under the app bar with
+    // nothing scrollable, so a body taller than the screen overflows. `layout: "centered"` is what
+    // makes the engine build a full-viewport shell (builder-specs/15-page-layout-preset.md).
+    describe("centered page shell", () => {
+      const credentials = [
+        { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
+        { type: "ContentInput", props: { name: "password", inputType: "password" } },
+        { type: "ContentButton", props: { label: "دخول", destinationType: "action", buttonAction: "login" } },
+      ];
+
+      it("emits layout centered and no scroll for a page with an auth form", () => {
+        const page = pages(loginPage(credentials))[0];
+        expect(page.layout).toBe("centered");
+        expect(page.scroll).toBeUndefined();
+      });
+
+      it("overrides an explicit scroll on the page input", () => {
+        const result = transformWebToMobile(JSON.stringify({
+          path: "/login",
+          scroll: "vertical",
+          rootProps: { direction: "rtl", language: "ar", primary: "#0b78c5" },
+          blocks: [{ type: "Section", props: { content: credentials } }],
+        })) as Ok;
+        expect(pages(result)[0].layout).toBe("centered");
+        expect(pages(result)[0].scroll).toBeUndefined();
+      });
+
+      it("wraps the body in an expand container and a centered max column", () => {
+        const page = pages(loginPage(credentials))[0];
+        const body = page.body as Node[];
+        expect(body).toHaveLength(1);
+        expect(body[0].type).toBe("container");
+        expect(body[0].props).toMatchObject({ expand: true, color: page.background as string });
+
+        const column = body[0].child as Node;
+        expect(column.type).toBe("column");
+        expect(column.props).toMatchObject({
+          mainAxisAlignment: "center",
+          crossAxisAlignment: "stretch",
+          mainAxisSize: "max",
+        });
+        expect((column.children as Node[])[0].type).toBe("container");
+      });
+
+      it("leaves a page without an auth form on the normal scrolling shell", () => {
+        const result = loginPage([{ type: "ContentInput", props: { name: "newsletter" } }]);
+        const page = pages(result)[0];
+        expect(page.layout).toBeUndefined();
+        expect(page.scroll).toBe("vertical");
+        expect((page.body as Node[])[0].type).toBe("container");
+      });
+
+      it("does not leak the centered shell onto a later non-auth page", () => {
+        const result = transformWebToMobile(JSON.stringify({
+          pages: [
+            { path: "/login", content: [{ type: "Section", props: { content: credentials } }] },
+            { path: "/about", content: [{ type: "Section", props: { content: [{ type: "ContentHeading", props: { text: "من نحن" } }] } }] },
+          ],
+        })) as Ok;
+        expect(pages(result)[0].layout).toBe("centered");
+        expect(pages(result)[1].layout).toBeUndefined();
+        expect(pages(result)[1].scroll).toBe("vertical");
+      });
+    });
+
+    // Regression: the engine's auth cubit is a customer phone/OTP flow (docs/06-feature-auth.md),
+    // so an email/username login submits a param AuthCubit cannot bind — the button validates, the
+    // call fires, and nobody signs in.
+    describe("credential field contract", () => {
+      const warningsFor = (content: Record<string, unknown>[]) => loginPage(content).warnings ?? [];
+
+      it("accepts a phone credential without warning", () => {
+        expect(warningsFor([
+          { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
+          { type: "ContentInput", props: { name: "password", inputType: "password" } },
+          { type: "ContentButton", props: { destinationType: "action", buttonAction: "login" } },
+        ])).toEqual([]);
+      });
+
+      it("warns and names the offending field when the credential is an email", () => {
+        const warnings = warningsFor([
+          { type: "ContentInput", props: { name: "email", inputType: "email" } },
+          { type: "ContentInput", props: { name: "password", inputType: "password" } },
+          { type: "ContentButton", props: { destinationType: "action", buttonAction: "login" } },
+        ]);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('found "email"');
+        expect(warnings[0]).toContain("phone/OTP");
+      });
+
+      it("warns when the only field is a password", () => {
+        const warnings = warningsFor([
+          { type: "ContentInput", props: { name: "password", inputType: "password" } },
+          { type: "ContentButton", props: { destinationType: "action", buttonAction: "login" } },
+        ]);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).not.toContain("found");
+      });
+
+      it("stays quiet for a form with no auth button", () => {
+        expect(warningsFor([
+          { type: "ContentInput", props: { name: "email", inputType: "email" } },
+        ])).toEqual([]);
+      });
     });
   });
 
@@ -1268,6 +1393,61 @@ describe("transformWebToMobile", () => {
       const input = { type: "NonExistent123", props: {} };
       const result = transformWebToMobile(JSON.stringify(input));
       expect(result.success).toBe(false);
+    });
+  });
+
+  // Regression: tabs used to be a hardcoded five-route list, so any site without the full canonical
+  // catalogue shipped tabs pointing at routes that had no page behind them.
+  describe("tab bar derived from the pages", () => {
+    const site = (routes: string[]) =>
+      transformWebToMobile(JSON.stringify({
+        pages: routes.map((path) => ({
+          path,
+          title: path.replace(/^\//, "") || "home",
+          content: [{ type: "Section", props: { content: [{ type: "ContentHeading", props: { text: "x" } }] } }],
+        })),
+      })) as Ok;
+
+    const nav = (result: Ok) => (result.output as Node).navigation as Node;
+    const routesOf = (result: Ok) => (nav(result).tabs as Node[]).map((t) => t.route);
+
+    it("emits one tab per page and nothing else", () => {
+      expect(routesOf(site(["/", "/login"]))).toEqual(["/home", "/login"]);
+    });
+
+    it("uses canonical label and icon for known routes", () => {
+      expect((nav(site(["/", "/login"])).tabs as Node[])).toEqual([
+        { id: "tab-home", label: "الرئيسية", icon: "home", route: "/home" },
+        { id: "tab-login", label: "تسجيل الدخول", icon: "person", route: "/login" },
+      ]);
+    });
+
+    it("falls back to the page title for a route with no canonical chrome", () => {
+      const tabs = nav(site(["/", "/contact"])).tabs as Node[];
+      expect(tabs[1]).toEqual({ id: "tab-contact", label: "contact", icon: "article", route: "/contact" });
+    });
+
+    it("keeps /home first regardless of page order", () => {
+      expect(routesOf(site(["/login", "/"]))).toEqual(["/home", "/login"]);
+    });
+
+    it("never makes an engine-owned or dynamic route a tab", () => {
+      const result = site(["/", "/checkout", "/orders", "/products/:slug"]);
+      expect(routesOf(result)).toEqual(["/home"]);
+      expect(nav(result).shellExcludeRoutes).toContain("/products/:slug");
+    });
+
+    it("caps the bar at five tabs and warns about the overflow", () => {
+      const result = site(["/", "/a", "/b", "/c", "/d", "/e"]);
+      expect(routesOf(result)).toHaveLength(5);
+      expect(nav(result).shellExcludeRoutes).toContain("/e");
+      expect(result.warnings?.[0]).toContain("bottom bar holds 5 tabs");
+    });
+
+    it("shell-excludes the engine routes even when every page is a tab", () => {
+      const excluded = nav(site(["/", "/login"])).shellExcludeRoutes as string[];
+      expect(excluded).toContain("/auth/login");
+      expect(excluded).not.toContain("/login");
     });
   });
 
@@ -1631,9 +1811,13 @@ describe("transformWebToMobile", () => {
       expect((tap.child as Record<string, unknown>).type).toBe("text");
     });
 
-    it("lists non-tab routes in shellExcludeRoutes", () => {
+    it("makes both pages tabs and shell-excludes only the engine's own routes", () => {
       const nav = output.navigation as Record<string, unknown>;
-      expect(nav.shellExcludeRoutes).toContain("/about");
+      expect((nav.tabs as Node[]).map((t) => t.route)).toEqual(["/home", "/about"]);
+      // /about has no canonical chrome, so it falls back to the page title.
+      expect((nav.tabs as Node[])[1]).toMatchObject({ id: "tab-about", icon: "article" });
+      expect(nav.shellExcludeRoutes).not.toContain("/about");
+      expect(nav.shellExcludeRoutes).toContain("/checkout");
     });
   });
 

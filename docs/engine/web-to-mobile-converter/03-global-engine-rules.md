@@ -47,16 +47,22 @@ Reset counter at each page boundary.
 |------|------|---------|
 | G-13 | Default catalog / home / long content | `pages[].scroll: "vertical"` |
 | G-14 | List/grid on catalog pages | `gridView` / `listView` with `enableInnerScroll: false` |
-| G-15 | Short auth / static forms | `scroll: "none"` + short `body[]` |
-| G-16 | Full-screen centered splash | `scroll: "none"` + `layout: "centered"` |
+| G-15 | Auth / static forms, full-screen centered splash | `layout: "centered"` + `container.expand` — **omit `scroll`** |
+| G-16 | Body whose own child scrolls (`enableInnerScroll: true`) | `scroll: "none"` |
 | G-17 | Never nest `singleChildScrollView` under page vertical scroll | Omit inner scroll wrapper |
+
+**G-15 vs G-16.** `scroll: "none"` only removes the outer scroll — it does not give the page a
+bounded height, inject an expand container, or set the root column to `mainAxisSize: max`. A static
+form under `scroll: "none"` therefore shrink-wraps under the app bar with nothing scrollable, and
+anything past the fold is unreachable. `layout: "centered"` does all three and is exempt from both
+overflow validators below. Use `scroll: "none"` only for G-16.
 
 ### Overflow errors to avoid
 
 | Code | Condition | Fix |
 |------|-----------|-----|
 | `viewport_center_without_expand` | `column` + `mainAxisSize: max` + `mainAxisAlignment: center` under `scroll: vertical` without expand child | Add `container.expand` or use `layout: centered` |
-| `static_page_overflow_risk` | `scroll: none` + tall unscrollable body | Add inner scroll or shorten body |
+| `static_page_overflow_risk` | `scroll: none` + tall unscrollable body | Switch to `layout: centered`, or add an inner scroller |
 
 ---
 
