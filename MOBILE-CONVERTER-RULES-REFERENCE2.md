@@ -1180,7 +1180,12 @@ Use this when validating your engine against converter output:
 ### Layout
 
 - [ ] Catalog pages: `scroll: vertical` + `enableInnerScroll: false` on grids
-- [ ] Auth pages: `layout: centered` + `container.expand`, no `scroll` key; `auth.login` params use `phone`, never `email`
+- [ ] Auth pages: `layout: centered` + `container.expand`, no `scroll` key
+- [ ] Auth method is `requestOtp` / `verifyOtp` / `logout` — **never `login`**, `AuthCubit` has no such method
+- [ ] `requestOtp`: `phone` (+ optional `fullName`) from the form, `tenantSlug` from `app`; success → `/auth/otp-reset`
+- [ ] `verifyOtp`: `phone` from `authState`, `otpCode` from the form, `tenantSlug` from `app`; success → `/home`
+- [ ] No `password` / `email` param anywhere in the auth flow
+- [ ] The OTP code field is an `otpInput` (`fieldId: otpCode`), and `/auth/otp-reset` exists in `pages[]`
 - [ ] Section backgrounds on `container.props.color`
 - [ ] Accordion → `expansionTile` children (not raw Accordion type)
 

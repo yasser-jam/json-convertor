@@ -82,39 +82,110 @@ let _activeAuthForm: AuthForm | null = null;
 /** Set when any Section on the current page became an auth form — drives the centered page shell. */
 let _pageHasAuthForm = false;
 
+/** Set when some action reads a param out of the `app` envelope (`{ source: "app" }`). */
+let _usedAppEnvelopeSource = false;
+
 /** Auth `buttonAction`s that submit the surrounding form rather than navigating. */
-const AUTH_FORM_ACTIONS = new Set(["login"]);
+const AUTH_FORM_ACTIONS = new Set(["login", "verifyOtp"]);
 
 /** Field ids that are never sent as auth params (confirmations, UI-only toggles). */
 const AUTH_PARAM_EXCLUDED_FIELDS = new Set(["passwordConfirm", "confirmPassword", "rememberMe"]);
 
-/**
- * The one credential the engine's `auth` cubit can bind. Auth is a customer **phone/OTP** flow —
- * `/api/v1/customer/auth/otp/request` + `CustomerOtpRequest`, see `docs/06-feature-auth.md` — so a
- * login form built on an `email` / `username` field submits a param `AuthCubit` has no binding for.
- * The button validates, the cubitCall fires, and the user is never signed in. Warn at conversion
- * time rather than shipping a login screen that silently cannot log in.
- */
-const AUTH_CREDENTIAL_FIELD = "phone";
-
-/** Non-credential fields that legitimately accompany the phone on an auth form. */
-const AUTH_SECONDARY_FIELDS = new Set(["password", "otpCode"]);
+/** The `FormStateStore` key the engine's `otpInput` writes into, and the field `verifyOtp` reads. */
+const OTP_FIELD_ID = "otpCode";
 
 /**
- * Flags an auth form whose credential field is not `phone`. Not auto-corrected: renaming the
- * merchant's field would leave an "email" label and `validateEmail` on what the cubit reads as a
- * phone number, which fails later and less visibly than this warning does.
+ * The engine's OTP screen. **Not** a natively registered route: the app builds its router from
+ * `pages[]`, so this page has to be in the converted JSON like any other (see checkAuthRouteTargets).
  */
-function checkAuthCredentialField(action: string, fields: string[]): void {
-  if (fields.includes(AUTH_CREDENTIAL_FIELD)) return;
-  const found = fields.find(
-    (f) => !AUTH_SECONDARY_FIELDS.has(f) && !AUTH_PARAM_EXCLUDED_FIELDS.has(f)
+const OTP_ROUTE = "/auth/otp-reset";
+
+type AuthParamSpec = { source: "form" | "authState" | "app"; field: string };
+
+/**
+ * What each auth `buttonAction` actually dispatches.
+ *
+ * `AuthCubit` exposes **`requestOtp`**, **`verifyOtp`** and **`logout`** — there is no `login`
+ * method, and no password anywhere in the flow ([`docs/06-feature-auth.md`], [`docs/04-actions-and-requests.md`]).
+ * Auth is `/api/v1/customer/auth/otp/request` + `/verify`, bodies `CustomerOtpRequest` /
+ * `CustomerOtpVerifyRequest`. So a web `login` button is step 1 of a two-step flow, not a login:
+ *
+ *   `/login` --`auth.requestOtp`--> `/auth/otp-reset` --`auth.verifyOtp`--> `/home`
+ *
+ * `form` params are emitted only when the surrounding form carries the field; `authState` carries
+ * the phone from step 1 into step 2 (the OTP screen never re-collects it); `tenantSlug` comes from
+ * the `app` envelope so one conversion works for whichever merchant it is built for.
+ */
+type AuthContract = {
+  method: string;
+  formId: string;
+  params: Record<string, AuthParamSpec>;
+  /** Form fields the call cannot work without. */
+  requiredFields: string[];
+  onSuccess: { type: string; route: string; navigation_type: string };
+  /** Whether the button's `submitRedirectUrl` may override `onSuccess`. */
+  allowRedirectOverride: boolean;
+};
+
+const AUTH_ACTION_CONTRACT: Record<string, AuthContract> = {
+  login: {
+    method: "requestOtp",
+    formId: "otp-request-form",
+    params: {
+      phone: { source: "form", field: "phone" },
+      fullName: { source: "form", field: "fullName" },
+      tenantSlug: { source: "app", field: "tenantSlug" },
+    },
+    requiredFields: ["phone"],
+    // The OTP screen is the only valid landing. A `submitRedirectUrl` straight to the store would
+    // skip verification and leave the app on an unauthenticated session, so it is not honoured.
+    onSuccess: { type: "navigate", route: OTP_ROUTE, navigation_type: "clear_stack" },
+    allowRedirectOverride: false,
+  },
+  verifyOtp: {
+    method: "verifyOtp",
+    formId: "otp-verify-form",
+    params: {
+      phone: { source: "authState", field: "phone" },
+      otpCode: { source: "form", field: OTP_FIELD_ID },
+      tenantSlug: { source: "app", field: "tenantSlug" },
+    },
+    requiredFields: [OTP_FIELD_ID],
+    onSuccess: { type: "navigate", route: "/home", navigation_type: "clear_stack" },
+    allowRedirectOverride: true,
+  },
+};
+
+/**
+ * Flags auth forms the cubit cannot read. Nothing is auto-corrected: renaming the merchant's field
+ * would leave an "email" label and `validateEmail` on what the cubit reads as a phone number, and
+ * dropping a password field silently would hide that the whole credential model is different.
+ */
+function checkAuthFormFields(action: string, contract: AuthContract, fields: string[]): void {
+  for (const required of contract.requiredFields) {
+    if (fields.includes(required)) continue;
+    const found = fields.find((f) => !AUTH_PARAM_EXCLUDED_FIELDS.has(f));
+    addWarning(
+      required === OTP_FIELD_ID
+        ? `Auth "${action}" form has no "${OTP_FIELD_ID}" field; add a ContentInput with name ` +
+            `"${OTP_FIELD_ID}" — it converts to the engine's otpInput and auth.verifyOtp reads the code from it`
+        : `Auth "${action}" form has no "${required}" field${found ? ` (found "${found}")` : ""}; ` +
+            `the engine's auth cubit is a phone/OTP flow and cannot bind any other credential — ` +
+            `use a ContentInput with name "${required}" and inputType "tel"`
+    );
+  }
+
+  const bound = new Set(
+    Object.values(contract.params).filter((p) => p.source === "form").map((p) => p.field)
   );
-  addWarning(
-    `Auth "${action}" form has no "${AUTH_CREDENTIAL_FIELD}" field${found ? ` (found "${found}")` : ""}; ` +
-      `the engine's auth cubit is a phone/OTP flow and cannot bind any other credential — ` +
-      `use a ContentInput with name "${AUTH_CREDENTIAL_FIELD}" and inputType "tel"`
-  );
+  for (const field of fields) {
+    if (bound.has(field) || AUTH_PARAM_EXCLUDED_FIELDS.has(field)) continue;
+    addWarning(
+      `Auth "${action}" form field "${field}" is not part of the engine's OTP flow ` +
+        `(auth.${contract.method} binds ${[...bound].join(" + ")}); the field still renders but is ` +
+        `never submitted — remove it or rename it to a field the cubit binds`
+    );
+  }
 }
 
 /**
@@ -563,15 +634,15 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
 
   switch (action) {
     case "login":
-      // A `login` button inside a Section that also holds input fields is a real login form:
-      // submit it. On its own it is only an entry point to the engine's native auth screen.
+      // A `login` button inside a Section that also holds input fields submits step 1 of the OTP
+      // flow (auth.requestOtp). On its own it is only a link to whatever page renders the fields.
       return _activeAuthForm
         ? buildAuthFormTap("login", _activeAuthForm, onRedirect)
         : { type: "navigate", route: "/auth/login", navigation_type: "push" };
     case "logout":
       return {
         type: "cubitCall", cubit: "auth", method: "logout",
-        onSuccess: { type: "navigate", route: "/auth/login", navigation_type: "go" },
+        onSuccess: { type: "navigate", route: "/auth/login", navigation_type: "clear_stack" },
       };
     case "addToCart":
       return { type: "cubitCall", cubit: "cart", method: "addItem" };
@@ -599,39 +670,62 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
         },
       };
     case "verifyOtp":
-      return {
-        type: "cubitCall", cubit: "auth", method: "verifyOtp",
-        requireValidForm: true, formId: "otp-verify-form",
-        params: { phone: { source: "authState", field: "phone" } },
-        ...(onRedirect ? { onSuccess: onRedirect } : {}),
-      };
+      if (_activeAuthForm) return buildAuthFormTap("verifyOtp", _activeAuthForm, onRedirect);
+      addWarning(
+        `ContentButton with buttonAction "verifyOtp" has no sibling "${OTP_FIELD_ID}" input; ` +
+          `auth.verifyOtp reads the code out of the form store, so put the button in the same ` +
+          `Section as a ContentInput named "${OTP_FIELD_ID}"`
+      );
+      return buildAuthFormTap(
+        "verifyOtp",
+        { formId: AUTH_ACTION_CONTRACT.verifyOtp.formId, fields: [OTP_FIELD_ID] },
+        onRedirect
+      );
     default:
       return undefined;
   }
 }
 
 /**
- * `cubitCall auth.<method>` that submits an auth form: every collected field is passed as a
- * `source: "form"` param, and the engine gates the call on form validity via `requireValidForm`.
+ * `cubitCall auth.<method>` that submits an auth form. The params are **the cubit's**, not the
+ * form's: each one is emitted from AUTH_ACTION_CONTRACT, and a `source: "form"` param is skipped
+ * when the form has no such field (an optional `fullName`, say). Fields the contract does not name
+ * are never sent — checkAuthFormFields has already warned about them.
  */
 function buildAuthFormTap(
-  method: string,
+  action: string,
   form: AuthForm,
   onRedirect: Record<string, unknown> | undefined
 ): Record<string, unknown> {
+  const contract = AUTH_ACTION_CONTRACT[action];
   const params: Record<string, unknown> = {};
-  for (const field of form.fields) {
-    if (AUTH_PARAM_EXCLUDED_FIELDS.has(field)) continue;
-    params[field] = { source: "form", field };
+  for (const [name, spec] of Object.entries(contract.params)) {
+    if (spec.source === "form" && !form.fields.includes(spec.field)) continue;
+    if (spec.source === "app") _usedAppEnvelopeSource = true;
+    params[name] = { source: spec.source, field: spec.field };
   }
+
+  // Auth success always resets the stack — there is no "back" into a form the user already
+  // submitted — so an authored redirect keeps its route but not its navigation_type.
+  let onSuccess = contract.onSuccess as Record<string, unknown>;
+  if (onRedirect && contract.allowRedirectOverride) {
+    onSuccess = { ...onRedirect, navigation_type: "clear_stack" };
+  } else if (onRedirect && onRedirect.route !== contract.onSuccess.route) {
+    addWarning(
+      `Auth "${action}" button sets submitRedirectUrl "${onRedirect.route}"; auth.${contract.method} ` +
+        `only sends the code, so success navigates to "${contract.onSuccess.route}" instead — put the ` +
+        `redirect on the verifyOtp button that finishes the flow`
+    );
+  }
+
   return {
     type: "cubitCall",
     cubit: "auth",
-    method,
+    method: contract.method,
     requireValidForm: true,
-    formId: form.formId,
-    ...(Object.keys(params).length > 0 ? { params } : {}),
-    ...(onRedirect ? { onSuccess: onRedirect } : {}),
+    formId: contract.formId,
+    params,
+    onSuccess,
   };
 }
 
@@ -900,11 +994,39 @@ const INPUT_KEYBOARD_MAP: Record<string, string> = {
   password: "text",
 };
 
+/** Digit count of the engine's OTP boxes. The backend issues six-digit codes. */
+const OTP_LENGTH = 6;
+
+/**
+ * A `ContentInput` named `otpCode` is the OTP step, not a text field: the engine ships a dedicated
+ * `otpInput` (one box per digit) whose `fieldId` is what `auth.verifyOtp` reads out of
+ * `FormStateStore`. There is no `inputType: "otp"` on the web side — the field **name** is the
+ * signal. See docs/engine/builder-specs/16-app-drawer-tabs-otp.md § 3.
+ */
+function buildOtpInput(): Record<string, unknown> {
+  return {
+    id: generateId("otp"),
+    type: "otpInput",
+    props: {
+      fieldId: OTP_FIELD_ID,
+      length: OTP_LENGTH,
+      autofocus: true,
+      validateRequired: true,
+      validateMinLength: OTP_LENGTH,
+      validateMaxLength: OTP_LENGTH,
+    },
+  };
+}
+
 function transformInput(block: Record<string, unknown>, rootProps: Record<string, unknown>): Record<string, unknown> {
   const props = (block.props || {}) as Record<string, unknown>;
   const dir = (rootProps.direction as string) || "rtl";
   const fieldId = (props.name as string) || (props.id as string) || "field";
   const inputType = (props.inputType as string) || "text";
+
+  if (fieldId === OTP_FIELD_ID) {
+    return applyLayout(buildOtpInput(), props.layout as Record<string, unknown> | undefined, rootProps);
+  }
   // Credentials and contact identifiers are always Latin-keyed, even in an RTL app.
   const isLtrField = inputType === "email" || inputType === "tel" || inputType === "password";
 
@@ -1515,17 +1637,18 @@ function transformSection(block: Record<string, unknown>, rootProps: Record<stri
   const columnsMobile = parseInt(String(props.columnsMobile || props.columns || 1), 10);
   const gridGap = parsePx(props.gridGap as string, 16);
 
-  // An auth Section (input fields + a login button) becomes a real `form` node so the submit
-  // button can gate on validity and read its params out of FormStateStore.
+  // An auth Section (input fields + a login / verifyOtp button) becomes a real `form` node so the
+  // submit button can gate on validity and read its params out of FormStateStore. The formId is the
+  // cubit's, not the button's — `login` submits `auth.requestOtp`, whose form is `otp-request-form`.
   const authAction = findAuthFormAction(children);
   const authFields = authAction ? collectFormFieldIds(children) : [];
   const authForm: AuthForm | null =
     authAction && authFields.length > 0
-      ? { formId: `${authAction}-form`, fields: authFields }
+      ? { formId: AUTH_ACTION_CONTRACT[authAction].formId, fields: authFields }
       : null;
   if (authForm) {
     _pageHasAuthForm = true;
-    checkAuthCredentialField(authAction as string, authFields);
+    checkAuthFormFields(authAction as string, AUTH_ACTION_CONTRACT[authAction as string], authFields);
   }
 
   const templateGrid = transformProductsTemplateSection(block, rootProps);
@@ -4005,20 +4128,87 @@ function normalizeSiteData(site: Record<string, unknown>): Record<string, unknow
   });
 }
 
+/**
+ * The `app` envelope the deployment supplies. Web `root.props` carries no tenant — the converter
+ * must never invent one (docs/engine/web-to-mobile-converter/02-mobile-output-schema.md), so these
+ * are injectable and the built-in values are placeholders that only make the output runnable.
+ */
+export type AppEnvelopeConfig = {
+  name?: string;
+  bundleId?: string;
+  apiBaseUrl?: string;
+  tenantId?: string;
+  tenantSlug?: string;
+};
+
+const PLACEHOLDER_APP_ENVELOPE = {
+  name: "SOOQ Merchant Mobile",
+  bundleId: "com.sooq.merchant.mobile",
+  apiBaseUrl: "https://sooq.up.railway.app",
+  tenantId: "00000000-0000-0000-0000-000000000000",
+  tenantSlug: "example-merchant",
+} as const;
+
+/**
+ * Emitted when an action resolves a param out of the `app` envelope while that envelope still
+ * holds the placeholder tenant — the call would reach the backend keyed to nobody.
+ */
+export const TENANT_PLACEHOLDER_WARNING =
+  `Actions read "tenantSlug" from the app envelope, but app.tenantSlug is still the ` +
+  `"${PLACEHOLDER_APP_ENVELOPE.tenantSlug}" placeholder; pass the merchant's real ` +
+  `apiBaseUrl / tenantId / tenantSlug to transformWebToMobile before building the APK`;
+
+let _appConfig: AppEnvelopeConfig = {};
+
 function buildEnvelope(pages: Record<string, unknown>[], rootProps: Record<string, unknown>): Record<string, unknown> {
+  const app = { ...PLACEHOLDER_APP_ENVELOPE, ..._appConfig };
+
+  checkAuthRouteTargets(pages);
+  if (_usedAppEnvelopeSource && app.tenantSlug === PLACEHOLDER_APP_ENVELOPE.tenantSlug) {
+    addWarning(TENANT_PLACEHOLDER_WARNING);
+  }
+
   return {
     schemaVersion: "1.0",
-    app: {
-      name: "SOOQ Merchant Mobile",
-      bundleId: "com.sooq.merchant.mobile",
-      apiBaseUrl: "https://sooq.up.railway.app",
-      tenantId: "00000000-0000-0000-0000-000000000000",
-      tenantSlug: "example-merchant",
-    },
+    app,
     theme: transformTheme(rootProps),
     navigation: transformNavigation(rootProps, pages),
     pages,
   };
+}
+
+/** Every `navigate` route reachable from a converted page tree. */
+function collectNavigateRoutes(node: unknown, acc: Set<string>): Set<string> {
+  if (Array.isArray(node)) {
+    for (const child of node) collectNavigateRoutes(child, acc);
+    return acc;
+  }
+  if (!node || typeof node !== "object") return acc;
+  const obj = node as Record<string, unknown>;
+  if (obj.type === "navigate" && typeof obj.route === "string") acc.add(obj.route);
+  for (const value of Object.values(obj)) collectNavigateRoutes(value, acc);
+  return acc;
+}
+
+/**
+ * The app registers its routes from `pages[]` — nothing is natively mounted — so a navigate to a
+ * route no page defines is a dead end at runtime. Checked for `/auth/*` only: those are the routes
+ * the **converter itself** emits (`/auth/otp-reset` after `requestOtp`, `/auth/login` from a bare
+ * login button), so a merchant can ship a dangling one without ever authoring the target page.
+ */
+function checkAuthRouteTargets(pages: Record<string, unknown>[]): void {
+  const defined = new Set(pages.map((p) => normalizeRoute((p.route as string) || "/")));
+  const targets = [...collectNavigateRoutes(pages, new Set<string>())]
+    .filter((r) => r.startsWith("/auth/") && !defined.has(r))
+    .sort();
+
+  for (const route of targets) {
+    addWarning(
+      `A navigate action targets "${route}" but no page defines that route; the app builds its ` +
+        `router from pages[] only. Add the page — an OTP screen is a Section holding a ContentInput ` +
+        `named "${OTP_FIELD_ID}" and a ContentButton with buttonAction "verifyOtp"`
+    );
+  }
 }
 
 // ─── Main Entry Point ───────────────────────────────────────────────────────
@@ -4032,10 +4222,12 @@ function successResult(output: unknown): TransformResult {
   return warnings.length > 0 ? { success: true, output, warnings } : { success: true, output };
 }
 
-export function transformWebToMobile(input: string): TransformResult {
+export function transformWebToMobile(input: string, appConfig: AppEnvelopeConfig = {}): TransformResult {
   resetIdCounter();
   resetWarnings();
   _warnedContainerRequest = false;
+  _usedAppEnvelopeSource = false;
+  _appConfig = appConfig;
 
   let parsed: unknown;
   try {
@@ -4106,14 +4298,15 @@ export type ExamplePreset = {
 export const EXAMPLE_PRESETS: ExamplePreset[] = [
   {
     // ── Canonical example ──────────────────────────────────────────────────────
-    // Three pages, authored strictly from the mobile block set in docs/BLOCKS-MOBILE.md:
-    //   /          static content only  — ContentHeading, ContentParagraph, ContentImage,
-    //                                     ImageGallery, ContentIcon, ContentDivider,
-    //                                     Accordion, Testimonials, VideoEmbed, Group, Flex
-    //   /login     a real form          — ContentInput + ContentSwitch + ContentButton(login)
-    //   /products  products-grid preset — one unexpanded card-template Group (§9.7)
+    // Four pages, authored strictly from the mobile block set in docs/BLOCKS-MOBILE.md:
+    //   /                static content only  — ContentHeading, ContentParagraph, ContentImage,
+    //                                          ImageGallery, ContentIcon, ContentDivider,
+    //                                          Accordion, Testimonials, VideoEmbed, Group, Flex
+    //   /login           OTP step 1           — ContentInput + ContentSwitch + ContentButton(login)
+    //   /auth/otp-reset  OTP step 2           — otpCode ContentInput + ContentButton(verifyOtp)
+    //   /products        products-grid preset — one unexpanded card-template Group (§9.7)
     // No SiteHeader / SiteFooter / ZonePopup / Space / RowGroup: none are in the mobile set.
-    label: "Mobile Site JSON · 3 pages (home · login · products)",
+    label: "Mobile Site JSON · 4 pages (home · login · otp · products)",
     json: PK({
       root: {
         props: {
@@ -4270,12 +4463,13 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
           ],
         },
 
-        // ── 2. Login — form fields + a login-action button ─────────────────────
-        // The Section holds ContentInput fields *and* a ContentButton with
-        // buttonAction "login", so the converter wraps its content in a `form` node and the
-        // button submits it via cubitCall auth.login (requireValidForm + formId + form params).
+        // ── 2. Login — step 1 of the OTP flow ──────────────────────────────────
+        // The Section holds ContentInput fields *and* a ContentButton with buttonAction "login",
+        // so the converter wraps its content in a `form` node and the button submits
+        // cubitCall auth.requestOtp (requireValidForm + formId + form params). There is no
+        // AuthCubit.login and no password in the flow — the button sends a code and hands off to
+        // /auth/otp-reset.
         // No `scroll` here: an auth form makes the page emit `layout: "centered"` (§7 page rules).
-        // The credential is `phone` / `inputType: "tel"` — the engine's auth cubit is phone/OTP.
         {
           path: "/login", slug: "/login", name: "تسجيل الدخول", link: "/login",
           title: "تسجيل الدخول", description: "الدخول إلى حسابك", iconName: "user",
@@ -4289,11 +4483,11 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
               columns: 1, columnsMobile: 1, gridGap: "16px",
               content: [
                 { type: "ContentHeading", props: { text: "تسجيل الدخول", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-text" } },
-                { type: "ContentParagraph", props: { text: "أدخل رقم هاتفك وكلمة المرور للمتابعة.", textAlign: "center", fontSize: "theme-sm", fontWeight: "theme-light", color: "theme-neutral" } },
+                { type: "ContentParagraph", props: { text: "أدخل رقم هاتفك واسمك، وسنرسل لك رمز تحقق.", textAlign: "center", fontSize: "theme-sm", fontWeight: "theme-light", color: "theme-neutral" } },
                 { type: "ContentInput", props: { label: "رقم الهاتف", name: "phone", inputType: "tel", placeholder: "09xxxxxxxx", required: true, prependIcon: "none", inputAction: "" } },
-                { type: "ContentInput", props: { label: "كلمة المرور", name: "password", inputType: "password", placeholder: "••••••••", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentInput", props: { label: "الاسم الكامل", name: "fullName", inputType: "text", placeholder: "الاسم الثلاثي", required: true, prependIcon: "none", inputAction: "" } },
                 { type: "ContentSwitch", props: { label: "تذكّرني", name: "rememberMe", helperText: "", defaultChecked: false, labelPosition: "start", switchAction: "" } },
-                { type: "ContentButton", props: { label: "دخول", align: "center", destinationType: "action", buttonAction: "login", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+                { type: "ContentButton", props: { label: "إرسال رمز التحقق", align: "center", destinationType: "action", buttonAction: "login", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
                 { type: "ContentDivider", props: { thickness: "1px", colorMode: "theme", colorTheme: "neutral" } },
                 { type: "ContentLink", props: { title: "العودة إلى الرئيسية", link: { kind: "page", pageId: "/" }, align: "center", color: "theme-primary", hoverEffect: "underline", fontSize: "theme-sm", icon: "none" } },
               ],
@@ -4301,7 +4495,32 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
           }],
         },
 
-        // ── 3. Products — the products-grid section preset ─────────────────────
+        // ── 3. OTP — step 2 of the OTP flow ────────────────────────────────────
+        // `/auth/otp-reset` is where requestOtp lands. The app registers routes from pages[], so
+        // the screen has to be authored here. The `otpCode` ContentInput becomes the engine's
+        // six-box `otpInput`; verifyOtp reads the phone back out of `authState`.
+        {
+          path: "/auth/otp-reset", slug: "/auth/otp-reset", name: "رمز التحقق", link: "/auth/otp-reset",
+          title: "رمز التحقق", description: "تأكيد رقم الهاتف", iconName: "shield",
+          isCustom: true,
+          content: [{
+            type: "Section",
+            props: {
+              name: "نموذج التحقق", visible: true,
+              paddingTop: "48px", paddingBottom: "48px", paddingHorizontal: "24px",
+              backgroundColor: "#ffffff", maxWidth: "480px",
+              columns: 1, columnsMobile: 1, gridGap: "16px",
+              content: [
+                { type: "ContentHeading", props: { text: "رمز التحقق", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-text" } },
+                { type: "ContentParagraph", props: { text: "أدخل الرمز المكوّن من ستة أرقام الذي أرسلناه إلى رقم هاتفك.", textAlign: "center", fontSize: "theme-sm", fontWeight: "theme-light", color: "theme-neutral" } },
+                { type: "ContentInput", props: { label: "", name: "otpCode", inputType: "text", placeholder: "______", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentButton", props: { label: "تأكيد", align: "center", destinationType: "action", buttonAction: "verifyOtp", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+              ],
+            },
+          }],
+        },
+
+        // ── 4. Products — the products-grid section preset ─────────────────────
         // The preset Section is NOT expanded on the web side: `content` holds exactly one
         // card-template Group with `product: null`, and the repeater clones it per product.
         // The converter maps that onto gridView + itemBuilder.repeat over the collection
@@ -4356,14 +4575,17 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
   },
   {
     // ── Second canonical example ───────────────────────────────────────────────
-    // Two pages, mobile block set only, with a deliberately non-default theme:
-    //   /       "about us" heading, then a grid Section (columnsMobile: 1 ⇒ every cell full
-    //           width) whose cells are Group blocks stacking a title over a description,
-    //           then a ContentButton linking to /login
-    //   /login  two ContentInput fields + a login ContentButton ⇒ form + cubitCall auth.login
+    // Three pages, mobile block set only, with a deliberately non-default theme:
+    //   /                 "about us" heading, then a grid Section (columnsMobile: 1 ⇒ every cell
+    //                     full width) whose cells are Group blocks stacking a title over a
+    //                     description, then a ContentButton linking to /login
+    //   /login            phone + fullName + a login ContentButton ⇒ form + auth.requestOtp
+    //   /auth/otp-reset   otpCode + a verifyOtp ContentButton     ⇒ form + auth.verifyOtp
+    // The two auth pages are the complete engine flow, end to end:
+    //   /login --requestOtp--> /auth/otp-reset --verifyOtp--> /home
     // Theme departs from the defaults on every axis the converter reads: a serif Arabic face
     // (Amiri), a warm plum/clay palette, wider radii and a custom spacing scale.
-    label: "Mobile Site JSON · 2 pages (about us · login) — serif theme",
+    label: "Mobile Site JSON · 3 pages (about us · login · otp) — serif theme",
     json: PK({
       root: {
         props: {
@@ -4512,9 +4734,11 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
           ],
         },
 
-        // ── 2. Login — two inputs + a login button ────────────────────────────
-        // Same machinery as the commerce preset, on the custom theme. The credential stays
-        // `phone` / `inputType: "tel"` regardless of theme — auth is a phone/OTP flow.
+        // ── 2. Login — step 1 of the OTP flow ─────────────────────────────────
+        // `buttonAction: "login"` does not call a `login` method: AuthCubit has none. It submits
+        // `auth.requestOtp` (phone + fullName from the form, tenantSlug from the app envelope) and
+        // lands on /auth/otp-reset. The credential stays `phone` / `inputType: "tel"` regardless of
+        // theme — auth is a phone/OTP flow, and there is no password anywhere in it.
         {
           path: "/login", slug: "/login", name: "تسجيل الدخول", link: "/login",
           title: "تسجيل الدخول", description: "الدخول إلى حسابك", iconName: "user",
@@ -4529,8 +4753,35 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
               content: [
                 { type: "ContentHeading", props: { text: "تسجيل الدخول", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-primary" } },
                 { type: "ContentInput", props: { label: "رقم الهاتف", name: "phone", inputType: "tel", placeholder: "09xxxxxxxx", required: true, prependIcon: "none", inputAction: "" } },
-                { type: "ContentInput", props: { label: "كلمة المرور", name: "password", inputType: "password", placeholder: "••••••••", required: true, prependIcon: "none", inputAction: "" } },
-                { type: "ContentButton", props: { label: "دخول", align: "center", destinationType: "action", buttonAction: "login", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+                { type: "ContentInput", props: { label: "الاسم الكامل", name: "fullName", inputType: "text", placeholder: "الاسم الثلاثي", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentButton", props: { label: "إرسال رمز التحقق", align: "center", destinationType: "action", buttonAction: "login", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+              ],
+            },
+          }],
+        },
+
+        // ── 3. OTP — step 2 of the OTP flow ───────────────────────────────────
+        // The route the app registers is `/auth/otp-reset`; nothing is natively mounted, so the
+        // page has to be authored here or the requestOtp success navigate is a dead end.
+        // The `otpCode` ContentInput is what becomes the engine's six-box `otpInput`, and the
+        // verifyOtp button reads the phone back out of `authState` — the screen never re-asks
+        // for it. `submitRedirectUrl: "/"` is the post-login landing (normalized to /home).
+        {
+          path: "/auth/otp-reset", slug: "/auth/otp-reset", name: "رمز التحقق", link: "/auth/otp-reset",
+          title: "رمز التحقق", description: "تأكيد رقم الهاتف", iconName: "shield",
+          isCustom: true,
+          content: [{
+            type: "Section",
+            props: {
+              name: "نموذج التحقق", visible: true,
+              paddingTop: "56px", paddingBottom: "56px", paddingHorizontal: "20px",
+              backgroundColor: "#faf3ee", maxWidth: "480px",
+              columns: 1, columnsMobile: 1, gridGap: "20px",
+              content: [
+                { type: "ContentHeading", props: { text: "رمز التحقق", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-primary" } },
+                { type: "ContentParagraph", props: { text: "أدخل الرمز المكوّن من ستة أرقام الذي أرسلناه إلى رقم هاتفك.", textAlign: "center", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-normal", color: "theme-neutral" } },
+                { type: "ContentInput", props: { label: "", name: "otpCode", inputType: "text", placeholder: "______", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentButton", props: { label: "تأكيد", align: "center", destinationType: "action", buttonAction: "verifyOtp", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
               ],
             },
           }],

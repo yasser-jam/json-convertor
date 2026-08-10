@@ -26,10 +26,11 @@
 > `appBar` and `pages[].footer` ([§ 7](#7-page-envelope-structure)), so their ingest rules are live.
 >
 > Two worked reference payloads, both also available as presets in the converter playground:
-> [§ 14](#14-worked-example-a--three-page-commerce-site-json) — a three-page commerce site
-> (`home` · `login` · `products`) on the default theme, and
-> [§ 15](#15-worked-example-b--two-page-content-site-custom-theme) — a two-page content site
-> (`about us` · `login`) on a fully customised serif theme.
+> [§ 14](#14-worked-example-a--four-page-commerce-site-json) — a four-page commerce site
+> (`home` · `login` · `otp` · `products`) on the default theme, and
+> [§ 15](#15-worked-example-b--three-page-content-site-custom-theme) — a three-page content site
+> (`about us` · `login` · `otp`) on a fully customised serif theme. Both carry the complete
+> `requestOtp` → `verifyOtp` flow ([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method)).
 
 ---
 
@@ -50,8 +51,8 @@
 11. [Validation checklist](#11-validation-checklist)
 12. [Known limitations](#12-known-limitations)
 13. [Block convertibility matrix](#13-block-convertibility-matrix)
-14. [Worked example A — three-page commerce Site JSON](#14-worked-example-a--three-page-commerce-site-json)
-15. [Worked example B — two-page content site, custom theme](#15-worked-example-b--two-page-content-site-custom-theme)
+14. [Worked example A — four-page commerce Site JSON](#14-worked-example-a--four-page-commerce-site-json)
+15. [Worked example B — three-page content site, custom theme](#15-worked-example-b--three-page-content-site-custom-theme)
 
 ---
 
@@ -729,15 +730,15 @@ Sections [§ 6.29](#629-timer)–[§ 6.32](#632-switchfield) document mobile pri
 | `link` + `link.kind: "url"`  | `{ "type": "openUrl", "url": "<url>" }`                                                                                                                                                                                                         |
 | `href` (internal path)       | `{ "type": "navigate", "route": "<path>", "navigation_type": "push" }`                                                                                                                                                                          |
 | `href` (http/https/www)      | `{ "type": "openUrl", "url": "<href>" }`                                                                                                                                                                                                        |
-| `login` *(no sibling inputs)* | `{ "type": "navigate", "route": "/auth/login", "navigation_type": "push" }` — entry point to the engine's native auth screen                                                                                                                    |
-| `login` *(inside a Section with `ContentInput` fields)* | `{ "type": "cubitCall", "cubit": "auth", "method": "login", "requireValidForm": true, "formId": "login-form", "params": { "<field>": { "source": "form", "field": "<field>" } } }` — the Section becomes a `form`; see [§ 6.34](#auth-forms--the-form-wrapper) |
-| `logout`                     | `{ "type": "cubitCall", "cubit": "auth", "method": "logout", "onSuccess": { "type": "navigate", "route": "/auth/login", "navigation_type": "go" } }`                                                                                            |
+| `login` *(no sibling inputs)* | `{ "type": "navigate", "route": "/auth/login", "navigation_type": "push" }` — a link to the auth screen; that page must exist in `pages[]` ([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method))                               |
+| `login` *(inside a Section with `ContentInput` fields)* | `{ "type": "cubitCall", "cubit": "auth", "method": "requestOtp", "requireValidForm": true, "formId": "otp-request-form", "params": { "phone": { "source": "form", "field": "phone" }, "fullName": { "source": "form", "field": "fullName" }, "tenantSlug": { "source": "app", "field": "tenantSlug" } }, "onSuccess": { "type": "navigate", "route": "/auth/otp-reset", "navigation_type": "clear_stack" } }` — **step 1 of the OTP flow, not a login**; the Section becomes a `form`; see [§ 6.34](#auth-forms--the-form-wrapper) |
+| `logout`                     | `{ "type": "cubitCall", "cubit": "auth", "method": "logout", "onSuccess": { "type": "navigate", "route": "/auth/login", "navigation_type": "clear_stack" } }`                                                                                   |
 | `addToCart`                  | `{ "type": "cubitCall", "cubit": "cart", "method": "addItem" }`                                                                                                                                                                                 |
 | `addToWishlist`              | `{ "type": "navigate", "route": "/wishlist", "navigation_type": "push" }`                                                                                                                                                                       |
 | `makeOrder`                  | `{ "type": "cubitCall", "cubit": "checkout", "method": "placeOrder" }` — optional `params.guestEmail` from guest contact form (§6.33)                                                                                                           |
 | `cartQtyIncrease`            | `{ "type": "cubitCall", "cubit": "cart", "method": "updateQuantity", "params": { "variantId": { "source": "item", "field": "variantId" }, "delta": { "source": "value", "value": 1 } } }`                                                       |
 | `cartQtyDecrease`            | Same as `cartQtyIncrease` with `"value": -1`                                                                                                                                                                                                    |
-| `verifyOtp`                  | `{ "type": "cubitCall", "cubit": "auth", "method": "verifyOtp", "requireValidForm": true, "formId": "otp-verify-form", "params": { "phone": { "source": "authState", "field": "phone" } } }` — OTP code from form field `otpCode` automatically |
+| `verifyOtp`                  | `{ "type": "cubitCall", "cubit": "auth", "method": "verifyOtp", "requireValidForm": true, "formId": "otp-verify-form", "params": { "phone": { "source": "authState", "field": "phone" }, "otpCode": { "source": "form", "field": "otpCode" }, "tenantSlug": { "source": "app", "field": "tenantSlug" } }, "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "clear_stack" } }` — **step 2 of the OTP flow**; the phone is read back out of `authState`, never re-collected |
 
 
 **Cart remove line** (inside cart line template): `{ "type": "cubitCall", "cubit": "cart", "method": "removeItem", "params": { "variantId": { "source": "item", "field": "variantId" } } }`
@@ -1439,38 +1440,86 @@ A `textFormField` on its own is not submittable: it needs an enclosing `form` no
 button can gate on validity and read params out of `FormStateStore`.
 
 The converter creates one automatically when a **`Section` holds both** at least one `ContentInput`
-(or `ContentSwitch`) **and** a `ContentButton` whose `buttonAction` is an auth action (currently
-`login`). The Section's content wrapper is then nested inside a `form`, and the button's `tap`
-becomes a `cubitCall` on the `auth` cubit instead of the navigate stub:
+(or `ContentSwitch`) **and** a `ContentButton` whose `buttonAction` is an auth action (`login` or
+`verifyOtp`). The Section's content wrapper is then nested inside a `form`, and the button's `tap`
+becomes a `cubitCall` on the `auth` cubit instead of the navigate stub.
+
+Auth is a **two-page flow**, and a web `login` button is step 1 of it — not a login
+([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method)):
+
+```
+/login  --auth.requestOtp-->  /auth/otp-reset  --auth.verifyOtp-->  /home
+```
+
+**Step 1 — the login page** (`buttonAction: "login"`):
 
 ```json
 {
-  "id": "form-75",
+  "id": "form-37",
   "type": "form",
-  "props": { "formId": "login-form", "id": "login-form" },
+  "props": { "formId": "otp-request-form", "id": "otp-request-form" },
   "child": {
-    "id": "section-column-74",
+    "id": "section-column-36",
     "type": "column",
     "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
     "children": [
-      { "id": "input-68", "type": "textFormField", "props": { "id": "phone", "label": "رقم الهاتف", "hint": "09xxxxxxxx", "textDirection": "ltr", "keyboardType": "phone", "validatePhone": true, "validateRequired": true } },
-      { "id": "input-69", "type": "textFormField", "props": { "id": "password", "label": "كلمة المرور", "hint": "••••••••", "textDirection": "ltr", "obscureText": true, "validateRequired": true } },
-      { "id": "switch-70", "type": "switchField", "props": { "id": "rememberMe", "label": "تذكّرني", "activeColor": "#0b78c5" } },
+      { "id": "input-33", "type": "textFormField", "props": { "id": "phone", "label": "رقم الهاتف", "hint": "09xxxxxxxx", "textDirection": "ltr", "keyboardType": "phone", "validatePhone": true, "validateRequired": true } },
+      { "id": "input-34", "type": "textFormField", "props": { "id": "fullName", "label": "الاسم الكامل", "hint": "الاسم الثلاثي", "textDirection": "rtl", "validateRequired": true } },
       {
-        "id": "button-71",
+        "id": "button-35",
         "type": "button",
-        "props": { "label": "دخول", "variant": "elevated", "height": 56 },
+        "props": { "label": "إرسال رمز التحقق", "variant": "elevated", "height": 56 },
         "tap": {
           "type": "cubitCall",
           "cubit": "auth",
-          "method": "login",
+          "method": "requestOtp",
           "requireValidForm": true,
-          "formId": "login-form",
+          "formId": "otp-request-form",
           "params": {
             "phone": { "source": "form", "field": "phone" },
-            "password": { "source": "form", "field": "password" }
+            "fullName": { "source": "form", "field": "fullName" },
+            "tenantSlug": { "source": "app", "field": "tenantSlug" }
           },
-          "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "go" }
+          "onSuccess": { "type": "navigate", "route": "/auth/otp-reset", "navigation_type": "clear_stack" }
+        }
+      }
+    ]
+  }
+}
+```
+
+**Step 2 — the OTP page** (`buttonAction: "verifyOtp"`). A `ContentInput` named **`otpCode`** does
+not become a `textFormField`: it becomes the engine's `otpInput`
+([§ 6.34a](#634a-otpinput--contentinput-named-otpcode)). The phone is read back out of `authState`,
+so the screen never asks for it again:
+
+```json
+{
+  "id": "form-53",
+  "type": "form",
+  "props": { "formId": "otp-verify-form", "id": "otp-verify-form" },
+  "child": {
+    "id": "section-column-52",
+    "type": "column",
+    "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
+    "children": [
+      { "id": "otp-50", "type": "otpInput", "props": { "fieldId": "otpCode", "length": 6, "autofocus": true, "validateRequired": true, "validateMinLength": 6, "validateMaxLength": 6 } },
+      {
+        "id": "button-51",
+        "type": "button",
+        "props": { "label": "تأكيد", "variant": "elevated", "height": 56 },
+        "tap": {
+          "type": "cubitCall",
+          "cubit": "auth",
+          "method": "verifyOtp",
+          "requireValidForm": true,
+          "formId": "otp-verify-form",
+          "params": {
+            "phone": { "source": "authState", "field": "phone" },
+            "otpCode": { "source": "form", "field": "otpCode" },
+            "tenantSlug": { "source": "app", "field": "tenantSlug" }
+          },
+          "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "clear_stack" }
         }
       }
     ]
@@ -1483,17 +1532,38 @@ becomes a `cubitCall` on the `auth` cubit instead of the navigate stub:
 
 | Rule | Detail |
 | ---- | ------ |
-| `formId` | `"<action>-form"` — `login` ⇒ `"login-form"`. Mirrored as `props.id`; the renderer reads `formId` first |
-| Params | Every collected field id becomes `{ "source": "form", "field": "<id>" }` |
-| Excluded params | `passwordConfirm`, `confirmPassword`, `rememberMe` — collected for validity, never sent |
+| `formId` | The **cubit's** form, not the button's: `login` ⇒ `"otp-request-form"`, `verifyOtp` ⇒ `"otp-verify-form"`. Mirrored as `props.id`; the renderer reads `formId` first |
+| Params | The **contract's**, not the form's. `requestOtp` sends `phone` + `fullName` + `tenantSlug`; `verifyOtp` sends `phone` + `otpCode` + `tenantSlug`. A field the contract does not name is never sent, however many the Section collects |
+| Optional params | A `source: "form"` param is dropped when the form has no such field — a login form without `fullName` sends `phone` + `tenantSlug` |
+| `tenantSlug` | Always `{ "source": "app", "field": "tenantSlug" }`, resolved from the `app` envelope ([§ 7](#7-page-envelope-structure)) — never inlined |
+| Unbindable fields | `password`, `email`, `username`, … still render, are never submitted, and raise a conversion warning |
+| Excluded silently | `passwordConfirm`, `confirmPassword`, `rememberMe` — collected for validity, never sent, no warning |
 | Scope | Field collection stops at nested `Section` boundaries; each Section owns one form |
-| `submitRedirectUrl` | → `onSuccess: { navigate, navigation_type: "go" }` |
+| `submitRedirectUrl` | Honoured on `verifyOtp` (as `navigation_type: "clear_stack"`); **ignored with a warning** on `login` — success must land on `/auth/otp-reset` or verification is skipped |
 | No fields present | No `form` wrapper; the button falls back to `navigate → /auth/login` ([§ 6.5](#65-button--contentbutton)) |
+| Page shell | Any page holding an auth form emits `layout: "centered"` ([§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none)) |
 
 
-> A bare `login` `ContentButton` with no sibling inputs stays a **navigate stub** to the engine's
-> native `/auth/login` screen. That is the right output for a "sign in" entry point in a drawer or
-> header — only a page that actually renders the fields becomes a form.
+> A bare `login` `ContentButton` with no sibling inputs stays a **navigate stub** to `/auth/login`.
+> That is the right output for a "sign in" entry point in a drawer or header — only a page that
+> actually renders the fields becomes a form. The target page still has to exist in `pages[]`:
+> nothing is natively mounted ([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method)).
+
+#### 6.34a `otpInput` — `ContentInput` named `otpCode`
+
+There is no `inputType: "otp"` on the web side, so the **field name** is the signal: a
+`ContentInput` whose `name` is `otpCode` converts to the engine's six-box `otpInput` instead of a
+`textFormField`. `label`, `placeholder` and `inputType` are dropped — the widget renders one box per
+digit — so put the instruction text in a sibling `ContentParagraph`.
+
+| Prop | Value |
+| ---- | ----- |
+| `fieldId` | `"otpCode"` — the `FormStateStore` key `verifyOtp` reads |
+| `length` | `6` — the backend issues six-digit codes |
+| `autofocus` | `true` |
+| `validateRequired` / `validateMinLength` / `validateMaxLength` | `true` / `6` / `6` |
+
+Reference: [`docs/engine/builder-specs/16-app-drawer-tabs-otp.md`](docs/engine/builder-specs/16-app-drawer-tabs-otp.md) § 3.
 
 ---
 
@@ -2454,6 +2524,26 @@ When the input is a page object or array of page objects, the converter emits a 
 The five tabs above are what a site with all five of those pages gets. `navigation.tabs` is derived
 from `pages[]`, so a smaller site gets a smaller bar — see [§ 7.3](#73-tabs-are-derived-from-the-pages).
 
+### The `app` envelope is injected, never invented
+
+Web `root.props` carries no tenant, so the converter cannot derive one. The values above are
+**placeholders that only make the output runnable** — the real ones come from the deployment
+manifest and are passed in:
+
+```ts
+transformWebToMobile(siteJson, {
+  apiBaseUrl: "https://…",
+  tenantId: "…",
+  tenantSlug: "…",
+})
+```
+
+Actions resolve `{ "source": "app", "field": "tenantSlug" }` out of this block — the OTP flow does
+([§ 6.34](#auth-forms--the-form-wrapper)) — so a conversion that leaves the placeholder in place and
+reads it from an action raises a warning. A build shipped with `tenantSlug: "example-merchant"`
+reaches the backend keyed to nobody. Reference:
+[`docs/engine/web-to-mobile-converter/02-mobile-output-schema.md`](docs/engine/web-to-mobile-converter/02-mobile-output-schema.md).
+
 ### Page rules
 
 
@@ -2520,35 +2610,65 @@ The `expand` container is what gives the column a bounded height; `mainAxisSize:
 [`docs/engine/builder-specs/15-page-layout-preset.md`](docs/engine/builder-specs/15-page-layout-preset.md)
 and the `/auth/login` page in `mobile_production_v2.json`.
 
-### 7.2 `auth.login` binds `phone` — never `email`
+### 7.2 Auth is `requestOtp` → `verifyOtp` — there is no `login` method
 
-The engine's auth is a **customer phone/OTP flow**: `/api/v1/customer/auth/otp/request` and
-`/verify`, request bodies `CustomerOtpRequest` / `CustomerOtpVerifyRequest`, both keyed on phone
-([`docs/06-feature-auth.md`](docs/06-feature-auth.md)). `AuthCubit.login` has no binding for any
-other credential.
+`AuthCubit` exposes **`requestOtp`**, **`verifyOtp`** and **`logout`**. That is the whole surface
+([`docs/04-actions-and-requests.md`](docs/04-actions-and-requests.md),
+[`docs/06-feature-auth.md`](docs/06-feature-auth.md)). Auth is a customer phone/OTP flow —
+`/api/v1/customer/auth/otp/request` and `/verify`, request bodies `CustomerOtpRequest` /
+`CustomerOtpVerifyRequest` — and **there is no password anywhere in it**.
 
-So a login form built on an email or username field produces a `cubitCall` the cubit cannot read:
-the form validates, the call fires, and the user is never signed in. Nothing errors — it just
-silently does nothing, which is why this is worth catching at authoring time.
+A `cubitCall` naming a method the cubit does not have is the worst failure mode this converter has:
+nothing throws, the form validates, the call dispatches into nothing, and the user simply never signs
+in. Same for a param the request body has no field for.
+
+**The flow, end to end:**
+
+```
+/login            phone + fullName    →  auth.requestOtp   →  clear_stack to /auth/otp-reset
+/auth/otp-reset   otpCode (otpInput)  →  auth.verifyOtp    →  clear_stack to /home
+```
 
 | | Web input | Mobile output |
 | --- | --- | --- |
 | ✅ | `ContentInput` `name: "phone"`, `inputType: "tel"` | `textFormField` `id: "phone"` + `keyboardType: "phone"` + `validatePhone`; param `phone` |
-| ❌ | `ContentInput` `name: "email"`, `inputType: "email"` | param `email` — **dead**; converter warns |
+| ✅ | `ContentInput` `name: "fullName"` | param `fullName` — optional; dropped when absent |
+| ✅ | `ContentInput` `name: "otpCode"` | `otpInput` ([§ 6.34a](#634a-otpinput--contentinput-named-otpcode)); param `otpCode` |
+| ❌ | `ContentInput` `name: "password"` | renders, **never submitted**; converter warns |
+| ❌ | `ContentInput` `name: "email"` | renders, **never submitted**; converter warns |
 
-The converter warns rather than renaming the field: silently rewriting `email` → `phone` would leave
-an "email" label and `validateEmail` on a field the cubit reads as a phone number, which fails later
-and less visibly. Fix the web input.
+The converter warns rather than renaming or deleting the field: silently rewriting `email` → `phone`
+would leave an "email" label and `validateEmail` on a field the cubit reads as a phone number, and
+silently dropping a password box would hide that the credential model is different. Fix the web page.
 
 ```
 Auth "login" form has no "phone" field (found "email"); the engine's auth cubit is a
 phone/OTP flow and cannot bind any other credential — use a ContentInput with name
 "phone" and inputType "tel"
+
+Auth "login" form field "password" is not part of the engine's OTP flow (auth.requestOtp
+binds phone + fullName); the field still renders but is never submitted — remove it or
+rename it to a field the cubit binds
 ```
 
-`password` and `otpCode` are the only other fields the login form should carry.
 `passwordConfirm` / `confirmPassword` / `rememberMe` are collected for validity and excluded from
-`params` ([§ 6.34](#auth-forms--the-form-wrapper)).
+`params` without a warning ([§ 6.34](#auth-forms--the-form-wrapper)).
+
+#### Both auth routes must exist in `pages[]`
+
+The app builds its router from `pages[]`. **Nothing is natively mounted** — not `/auth/login`, not
+`/auth/otp-reset` — so `requestOtp`'s success navigate is a dead end unless the merchant's site
+actually contains the OTP screen. The converter checks this and warns:
+
+```
+A navigate action targets "/auth/otp-reset" but no page defines that route; the app builds
+its router from pages[] only. Add the page — an OTP screen is a Section holding a
+ContentInput named "otpCode" and a ContentButton with buttonAction "verifyOtp"
+```
+
+`/auth/otp-reset` stays out of the tab bar and inside `shellExcludeRoutes` — it is a page, not a
+destination ([§ 7.3](#73-tabs-are-derived-from-the-pages)). Worked end-to-end example:
+[§ 15](#15-worked-example-b--three-page-content-site-custom-theme).
 
 ### 7.3 Tabs are derived from the pages
 
@@ -3100,7 +3220,7 @@ The converter accumulates warnings and returns them in `{ success: true, output:
 - `"SiteHeader.rightSlot blocks [<types>] have no appBar equivalent…"`
 - `"ContentLink icon \"<name>\" dropped; the engine `button` has no icon prop"`
 - `"ContentInput \"<id>\" uses inputAction \"search_products\"…"`
-- `"Auth \"login\" form has no \"phone\" field (found \"<id>\"); the engine's auth cubit is a phone/OTP flow and cannot bind any other credential…"` — [§ 7.2](#72-authlogin-binds-phone--never-email)
+- `"Auth \"login\" form has no \"phone\" field (found \"<id>\"); the engine's auth cubit is a phone/OTP flow and cannot bind any other credential…"` — [§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method)
 - `"ContentSwitch \"<id>\" uses switchAction \"<action>\"; the mobile field is emitted as a plain switchField without store wiring…"`
 - `"ContentSwitch \"<id>\" helperText dropped; the engine switchField has no helper-text prop"`
 - `"Overlay zone \"<key>\" is never opened on route \"<route>\"; nothing triggers it, so its content was dropped…"`
@@ -3142,12 +3262,17 @@ Use this checklist before sending converter output to the engine.
 - Submit button `tap.formId` matches the form's `formId`
 - `form` uses `child` OR `children`, not both
 - Every `textFormField` / `switchField` sits inside a `form` — a field with no enclosing form cannot be submitted
-- Auth submit (`cubitCall auth.login`) carries `requireValidForm: true` + `formId` + `source: "form"` params
-- `auth.login` params contain **`phone`**, never `email` / `username` — the auth cubit is a phone/OTP flow ([§ 7.2](#72-authlogin-binds-phone--never-email))
+- Auth submit carries `requireValidForm: true` + `formId` + the contract's params ([§ 6.34](#auth-forms--the-form-wrapper))
+- The auth `method` is **`requestOtp`**, **`verifyOtp`** or **`logout`** — never `login`; `AuthCubit` has no such method ([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method))
+- `requestOtp` params are `phone` + optional `fullName` (`source: "form"`) + `tenantSlug` (`source: "app"`); no `password`, no `email` / `username`
+- `verifyOtp` params are `phone` (`source: "authState"`) + `otpCode` (`source: "form"`) + `tenantSlug` (`source: "app"`)
+- `requestOtp.onSuccess` navigates to `/auth/otp-reset`, and **a page defines that route** — the router is built from `pages[]` only
+- The OTP code field is an `otpInput` with `fieldId: "otpCode"`, never a `textFormField` ([§ 6.34a](#634a-otpinput--contentinput-named-otpcode))
+- `app.tenantSlug` / `tenantId` are injected from the deployment, not the built-in placeholders ([§ 7](#7-page-envelope-structure))
 - An auth page is `layout: "centered"` with **no `scroll` key**, and `body[0]` is a `container` `expand: true` wrapping a `column` `mainAxisSize: max` ([§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none))
 - `scroll: "none"` appears only on pages whose body has an inner scroller (`enableInnerScroll: true`) — never on a static form
 - `switchField` initial state is the **string** `"true"` / `"false"`, never a boolean
-- `textDirection: "ltr"` on email, phone, password and OTP fields
+- `textDirection: "ltr"` on email, phone and password fields
 
 ### Actions
 
@@ -3300,13 +3425,14 @@ Outside the mobile block set; converter behaviour retained for old payloads only
 
 ---
 
-## 14. Worked Example A — Three-Page Commerce Site JSON
+## 14. Worked Example A — Four-Page Commerce Site JSON
 
-A commerce store on the default theme: **`home` · `login` · `products`**. Available as the first
-preset in the converter playground (`lib/transformer.ts` → `EXAMPLE_PRESETS[0]`) — run it there to
-see the full output. It converts with **zero warnings**.
+A commerce store on the default theme: **`home` · `login` · `otp` · `products`**. Available as the
+first preset in the converter playground (`lib/transformer.ts` → `EXAMPLE_PRESETS[0]`) — run it there
+to see the full output. It converts with no warnings other than the tenant placeholder
+([§ 7](#7-page-envelope-structure)).
 
-*For a content site on a fully customised theme, see [§ 15](#15-worked-example-b--two-page-content-site-custom-theme).*
+*For a content site on a fully customised theme, see [§ 15](#15-worked-example-b--three-page-content-site-custom-theme).*
 
 Every block in it comes from [`docs/BLOCKS-MOBILE.md`](docs/BLOCKS-MOBILE.md). Deliberately absent:
 `SiteHeader`, `SiteFooter`, `ZonePopup`, `Space`, `RowGroup`, `Hero`, `Card`, `Stats` — none are in the
@@ -3318,12 +3444,13 @@ block set.
 | Page       | Route (in) | Route (out) | What it exercises |
 | ---------- | ---------- | ----------- | ----------------- |
 | Home       | `/`        | `/home`     | **Static blocks only.** `ContentHeading`, `ContentParagraph`, `ContentImage`, `ContentIcon`, `ContentDivider`, `Flex`, `Group`, `ImageGallery` (slider), `VideoEmbed`, `Testimonials`, `Accordion`. No data binding, no cubit calls |
-| Login      | `/login`   | `/login`    | **A real form.** `ContentInput` × 2 (`phone` + `password`) + `ContentSwitch` + `ContentButton` (`buttonAction: "login"`) inside one `Section` ⇒ `form` wrapper + `cubitCall auth.login`, page on the `layout: "centered"` shell |
+| Login      | `/login`   | `/login`    | **OTP step 1.** `ContentInput` × 2 (`phone` + `fullName`) + `ContentSwitch` + `ContentButton` (`buttonAction: "login"`) inside one `Section` ⇒ `form` wrapper + `cubitCall auth.requestOtp`, page on the `layout: "centered"` shell |
+| OTP        | `/auth/otp-reset` | `/auth/otp-reset` | **OTP step 2.** A `ContentInput` named `otpCode` ⇒ `otpInput`, plus a `verifyOtp` `ContentButton` ⇒ `cubitCall auth.verifyOtp`. Shell-excluded and off the tab bar, but a real page — the router is built from `pages[]` |
 | Products   | `/products`| `/products` | **Products Grid preset.** One unexpanded card-template `Group` ⇒ `gridView` + `itemBuilder.repeat` over the collection request |
 
 
 The site-level `zones` carry one `ZoneDrawer` — the only site zone in the block set — which becomes
-the page-level `appDrawer` on **all three** pages and turns on `appBar.showMenu`.
+the page-level `appDrawer` on **all four** pages and turns on `appBar.showMenu`.
 
 ### Envelope shape
 
@@ -3335,7 +3462,7 @@ the page-level `appDrawer` on **all three** pages and turns on `appBar.showMenu`
   "navigation": {
     "type": "tabs",
     "initialRoute": "/splash",
-    "shellExcludeRoutes": ["/splash", "…", "/checkout", "/orders"],
+    "shellExcludeRoutes": ["/splash", "…", "/auth/otp-reset", "/checkout", "/orders"],
     "tabs": [
       { "id": "tab-home",     "label": "الرئيسية",      "icon": "home",      "route": "/home" },
       { "id": "tab-login",    "label": "تسجيل الدخول", "icon": "person",    "route": "/login" },
@@ -3343,16 +3470,18 @@ the page-level `appDrawer` on **all three** pages and turns on `appBar.showMenu`
     ]
   },
   "pages": [
-    { "id": "page-home",     "route": "/home",     "scroll": "vertical", "appBar": { }, "body": [ ], "appDrawer": { } },
-    { "id": "page-login",    "route": "/login",    "layout": "centered", "appBar": { }, "body": [ ], "appDrawer": { } },
-    { "id": "page-products", "route": "/products", "scroll": "vertical", "appBar": { }, "body": [ ], "appDrawer": { } }
+    { "id": "page-home",     "route": "/home",           "scroll": "vertical", "appBar": { }, "body": [ ], "appDrawer": { } },
+    { "id": "page-login",    "route": "/login",          "layout": "centered", "appBar": { }, "body": [ ], "appDrawer": { } },
+    { "id": "page-auth-otp-reset", "route": "/auth/otp-reset", "layout": "centered", "appBar": { }, "body": [ ], "appDrawer": { } },
+    { "id": "page-products", "route": "/products",       "scroll": "vertical", "appBar": { }, "body": [ ], "appDrawer": { } }
   ]
 }
 ```
 
-Three pages, three tabs — the bar is derived from `pages[]`, so no tab points at a route this app
-does not have ([§ 7.3](#73-tabs-are-derived-from-the-pages)). `shellExcludeRoutes` therefore holds
-only the engine's own routes; `/` normalises to `/home`, which is the first tab.
+Four pages, three tabs — the bar is derived from `pages[]`, so no tab points at a route this app does
+not have ([§ 7.3](#73-tabs-are-derived-from-the-pages)). `/auth/otp-reset` is the exception that
+proves the rule: it is a real page (it has to be — the router reads `pages[]`) but an engine route,
+so it stays in `shellExcludeRoutes` and out of the bar. `/` normalises to `/home`, the first tab.
 
 ### 14.1 Home — static blocks
 
@@ -3433,11 +3562,13 @@ surface styling, which becomes a **`container` wrapping a `column`**:
 }
 ```
 
-### 14.2 Login — form + `cubitCall auth.login`
+### 14.2 Login — form + `cubitCall auth.requestOtp`
 
 One `Section` holding both inputs and the submit button. Because it does, the converter wraps its
 content in a `form` and the button submits it instead of navigating
-([§ 6.34 auth forms](#auth-forms--the-form-wrapper)).
+([§ 6.34 auth forms](#auth-forms--the-form-wrapper)). `buttonAction: "login"` does **not** produce an
+`auth.login` call — there is no such method. It produces step 1 of the OTP flow
+([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method)).
 
 **Web input:**
 
@@ -3452,11 +3583,11 @@ content in a `form` and the button submits it instead of navigating
       "backgroundColor": "#ffffff", "maxWidth": "480px", "columns": 1, "columnsMobile": 1,
       "content": [
         { "type": "ContentHeading", "props": { "text": "تسجيل الدخول", "level": "1", "textAlign": "center" } },
-        { "type": "ContentParagraph", "props": { "text": "أدخل رقم هاتفك وكلمة المرور للمتابعة.", "textAlign": "center", "fontSize": "theme-sm" } },
+        { "type": "ContentParagraph", "props": { "text": "أدخل رقم هاتفك واسمك، وسنرسل لك رمز تحقق.", "textAlign": "center", "fontSize": "theme-sm" } },
         { "type": "ContentInput", "props": { "label": "رقم الهاتف", "name": "phone", "inputType": "tel", "placeholder": "09xxxxxxxx", "required": true } },
-        { "type": "ContentInput", "props": { "label": "كلمة المرور", "name": "password", "inputType": "password", "placeholder": "••••••••", "required": true } },
+        { "type": "ContentInput", "props": { "label": "الاسم الكامل", "name": "fullName", "inputType": "text", "placeholder": "الاسم الثلاثي", "required": true } },
         { "type": "ContentSwitch", "props": { "label": "تذكّرني", "name": "rememberMe", "defaultChecked": false, "switchAction": "" } },
-        { "type": "ContentButton", "props": { "label": "دخول", "align": "center", "destinationType": "action", "buttonAction": "login", "submitRedirectUrl": "/", "buttonVariantMode": "variant", "buttonVariant": "primary", "buttonVariantSize": "lg" } },
+        { "type": "ContentButton", "props": { "label": "إرسال رمز التحقق", "align": "center", "destinationType": "action", "buttonAction": "login", "buttonVariantMode": "variant", "buttonVariant": "primary", "buttonVariantSize": "lg" } },
         { "type": "ContentDivider", "props": { "thickness": "1px", "colorMode": "theme", "colorTheme": "neutral" } },
         { "type": "ContentLink", "props": { "title": "العودة إلى الرئيسية", "link": { "kind": "page", "pageId": "/" }, "align": "center", "color": "theme-primary", "fontSize": "theme-sm" } }
       ]
@@ -3500,32 +3631,33 @@ content in a `form` and the button submits it instead of navigating
       "child": {
         "id": "form-75",
         "type": "form",
-        "props": { "formId": "login-form", "id": "login-form" },
+        "props": { "formId": "otp-request-form", "id": "otp-request-form" },
         "child": {
           "id": "section-column-74",
           "type": "column",
           "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
           "children": [
             { "id": "heading-66", "type": "text", "props": { "value": "تسجيل الدخول", "fontSize": 28, "fontWeight": "bold", "textAlign": "center", "color": "#14243f" } },
-            { "id": "text-67", "type": "text", "props": { "value": "أدخل رقم هاتفك وكلمة المرور للمتابعة.", "fontSize": 14, "textAlign": "center", "fontWeight": "normal", "color": "#6b7d93" } },
+            { "id": "text-67", "type": "text", "props": { "value": "أدخل رقم هاتفك واسمك، وسنرسل لك رمز تحقق.", "fontSize": 14, "textAlign": "center", "fontWeight": "normal", "color": "#6b7d93" } },
             { "id": "input-68", "type": "textFormField", "props": { "id": "phone", "label": "رقم الهاتف", "hint": "09xxxxxxxx", "textDirection": "ltr", "keyboardType": "phone", "validatePhone": true, "validateRequired": true } },
-            { "id": "input-69", "type": "textFormField", "props": { "id": "password", "label": "كلمة المرور", "hint": "••••••••", "textDirection": "ltr", "obscureText": true, "validateRequired": true } },
+            { "id": "input-69", "type": "textFormField", "props": { "id": "fullName", "label": "الاسم الكامل", "hint": "الاسم الثلاثي", "textDirection": "rtl", "validateRequired": true } },
             { "id": "switch-70", "type": "switchField", "props": { "id": "rememberMe", "label": "تذكّرني", "activeColor": "#0b78c5" } },
             {
               "id": "button-71",
               "type": "button",
-              "props": { "label": "دخول", "variant": "elevated", "height": 56 },
+              "props": { "label": "إرسال رمز التحقق", "variant": "elevated", "height": 56 },
               "tap": {
                 "type": "cubitCall",
                 "cubit": "auth",
-                "method": "login",
+                "method": "requestOtp",
                 "requireValidForm": true,
-                "formId": "login-form",
+                "formId": "otp-request-form",
                 "params": {
                   "phone": { "source": "form", "field": "phone" },
-                  "password": { "source": "form", "field": "password" }
+                  "fullName": { "source": "form", "field": "fullName" },
+                  "tenantSlug": { "source": "app", "field": "tenantSlug" }
                 },
-                "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "go" }
+                "onSuccess": { "type": "navigate", "route": "/auth/otp-reset", "navigation_type": "clear_stack" }
               }
             },
             { "id": "divider-72", "type": "divider", "props": { "thickness": 1, "color": "#6b7d93" } },
@@ -3552,18 +3684,123 @@ Points worth noting:
 - The page is `layout: "centered"` with **no `scroll` key**, and `body[]` is the `expand` container +
   centered column shell. The converter adds both because the page holds an auth form — do not
   hand-author `scroll: "none"` here ([§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none)).
-- The credential is `phone`, never `email` — the engine's auth cubit is a phone/OTP flow
-  ([§ 7.2](#72-authlogin-binds-phone--never-email)).
+- The method is **`requestOtp`**, and the `formId` is the cubit's (`otp-request-form`), not the
+  button's. `AuthCubit` has no `login` method and the request body has no password field
+  ([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method)).
+- `tenantSlug` comes from the `app` envelope, not from the page — one conversion, any merchant
+  ([§ 7](#7-page-envelope-structure)).
 - The `form` sits **inside** the Section's `container` and **outside** the `column` — chrome stays on
   the container, field scope on the form.
 - `rememberMe` is collected for form validity but **excluded from `params`** — it is a UI preference,
   not a credential.
-- `submitRedirectUrl: "/"` → `onSuccess` navigate to `/home` with `navigation_type: "go"` (replace, not
-  push — you must not be able to go "back" into a login screen).
-- `password` gets `textDirection: "ltr"` and `obscureText: true`; `tel` gets `keyboardType: "phone"` +
-  `validatePhone`.
-- The engine requires an `auth` cubit exposing `login`. A `login` button with **no** sibling inputs
-  still emits the old navigate stub to the native `/auth/login` screen.
+- `onSuccess` is `clear_stack` to `/auth/otp-reset`: the flow is not finished, and you must not be
+  able to go "back" into a form you already submitted. A `submitRedirectUrl` on this button is
+  ignored with a warning — put it on the `verifyOtp` button that ends the flow.
+- `tel` gets `keyboardType: "phone"` + `validatePhone`; `fullName` keeps the app's own direction.
+- A `login` button with **no** sibling inputs emits the navigate stub to `/auth/login` instead — and
+  that page then has to exist in `pages[]` like any other.
+
+### 14.2b OTP — `otpInput` + `cubitCall auth.verifyOtp`
+
+The screen `requestOtp` lands on. It exists because the app builds its router from `pages[]`; there
+is no natively mounted `/auth/otp-reset`.
+
+**Web input:**
+
+```json
+{
+  "path": "/auth/otp-reset", "slug": "/auth/otp-reset", "name": "رمز التحقق", "title": "رمز التحقق",
+  "content": [{
+    "type": "Section",
+    "props": {
+      "name": "نموذج التحقق", "visible": true,
+      "paddingTop": "48px", "paddingBottom": "48px", "paddingHorizontal": "24px",
+      "backgroundColor": "#ffffff", "maxWidth": "480px", "columns": 1, "columnsMobile": 1,
+      "content": [
+        { "type": "ContentHeading", "props": { "text": "رمز التحقق", "level": "1", "textAlign": "center" } },
+        { "type": "ContentParagraph", "props": { "text": "أدخل الرمز المكوّن من ستة أرقام الذي أرسلناه إلى رقم هاتفك.", "textAlign": "center", "fontSize": "theme-sm" } },
+        { "type": "ContentInput", "props": { "label": "", "name": "otpCode", "inputType": "text", "placeholder": "______", "required": true } },
+        { "type": "ContentButton", "props": { "label": "تأكيد", "align": "center", "destinationType": "action", "buttonAction": "verifyOtp", "submitRedirectUrl": "/", "buttonVariantMode": "variant", "buttonVariant": "primary", "buttonVariantSize": "lg" } }
+      ]
+    }
+  }]
+}
+```
+
+**Mobile output (page node, body abridged to the form):**
+
+```json
+{
+  "id": "page-auth-otp-reset",
+  "route": "/auth/otp-reset",
+  "title": "رمز التحقق",
+  "background": "#ffffff",
+  "layout": "centered",
+  "appBar": { "id": "auth-otp-reset-app-bar", "type": "appBar", "props": { "title": "رمز التحقق", "showMenu": true, "menuAction": { "type": "openDrawer" } } },
+  "body": [{
+    "id": "page-expand-100",
+    "type": "container",
+    "props": { "expand": true, "color": "#ffffff" },
+    "child": {
+      "id": "page-center-101",
+      "type": "column",
+      "props": { "mainAxisAlignment": "center", "crossAxisAlignment": "stretch", "mainAxisSize": "max" },
+      "children": [{
+        "id": "section-container-93",
+        "type": "container",
+        "props": { "color": "#ffffff", "padding": { "top": 48, "bottom": 48, "left": 24, "right": 24 } },
+        "child": {
+          "id": "form-91",
+          "type": "form",
+          "props": { "formId": "otp-verify-form", "id": "otp-verify-form" },
+          "child": {
+            "id": "section-column-90",
+            "type": "column",
+            "props": { "mainAxisAlignment": "start", "crossAxisAlignment": "stretch", "gap": 16 },
+            "children": [
+              { "id": "heading-86", "type": "text", "props": { "value": "رمز التحقق", "fontSize": 28, "fontWeight": "bold", "textAlign": "center", "color": "#14243f" } },
+              { "id": "text-87", "type": "text", "props": { "value": "أدخل الرمز المكوّن من ستة أرقام الذي أرسلناه إلى رقم هاتفك.", "fontSize": 14, "textAlign": "center", "fontWeight": "normal", "color": "#6b7d93" } },
+              { "id": "otp-88", "type": "otpInput", "props": { "fieldId": "otpCode", "length": 6, "autofocus": true, "validateRequired": true, "validateMinLength": 6, "validateMaxLength": 6 } },
+              {
+                "id": "button-89",
+                "type": "button",
+                "props": { "label": "تأكيد", "variant": "elevated", "height": 56 },
+                "tap": {
+                  "type": "cubitCall",
+                  "cubit": "auth",
+                  "method": "verifyOtp",
+                  "requireValidForm": true,
+                  "formId": "otp-verify-form",
+                  "params": {
+                    "phone": { "source": "authState", "field": "phone" },
+                    "otpCode": { "source": "form", "field": "otpCode" },
+                    "tenantSlug": { "source": "app", "field": "tenantSlug" }
+                  },
+                  "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "clear_stack" }
+                }
+              }
+            ]
+          }
+        }
+      }]
+    }
+  }],
+  "appDrawer": { "…": "from the ZoneDrawer site zone" }
+}
+```
+
+Points worth noting:
+
+- The `ContentInput` named `otpCode` became an **`otpInput`**, not a `textFormField`. Its `label` and
+  `placeholder` are dropped — the widget is six boxes — which is why the instruction text is a
+  sibling `ContentParagraph` ([§ 6.34a](#634a-otpinput--contentinput-named-otpcode)).
+- `phone` is read from **`authState`**, not from the form. `requestOtp` put it there; asking for it
+  again would be a second chance to typo it.
+- `submitRedirectUrl: "/"` **is** honoured here — `/` normalises to `/home` — and is forced to
+  `clear_stack`.
+- The page is shell-excluded and gets no tab, but it is a page in `pages[]`. Without it,
+  `requestOtp`'s `onSuccess` navigates nowhere and the converter warns
+  ([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method)).
 
 ### 14.3 Products — the Products Grid preset
 
@@ -3663,15 +3900,16 @@ Points worth noting:
 
 ---
 
-## 15. Worked Example B — Two-Page Content Site, Custom Theme
+## 15. Worked Example B — Three-Page Content Site, Custom Theme
 
 A content site — no catalog, no cart — on a theme that departs from the defaults on **every axis the
 converter reads**: a serif Arabic face, a warm plum/clay palette, wider radii, a custom spacing scale
 and taller buttons. Available as the second preset in the converter playground
-(`lib/transformer.ts` → `EXAMPLE_PRESETS[1]`). It converts with **zero warnings**.
+(`lib/transformer.ts` → `EXAMPLE_PRESETS[1]`). It converts with no warnings other than the tenant
+placeholder ([§ 7](#7-page-envelope-structure)).
 
-Where [§ 14](#14-worked-example-a--three-page-commerce-site-json) exercises commerce binding, this one
-exercises **theming, the drawer zone, and the two ways to build a grid**.
+Where [§ 14](#14-worked-example-a--four-page-commerce-site-json) exercises commerce binding, this one
+exercises **theming, the drawer zone, the two ways to build a grid, and the complete auth flow**.
 
 ### Page roles
 
@@ -3679,13 +3917,14 @@ exercises **theming, the drawer zone, and the two ways to build a grid**.
 | Page     | Route (in) | Route (out) | What it exercises |
 | -------- | ---------- | ----------- | ----------------- |
 | About us | `/`        | `/home`     | A title `Section`, then a **grid `Section`** (`columns: 2` / `columnsMobile: 1`) whose cells are `Group` blocks stacking a title over a description, then a `ContentButton` linking to `/login` |
-| Login    | `/login`   | `/login`    | `phone` + `password` `ContentInput` + a `login` `ContentButton` ⇒ `form` + `cubitCall auth.login`, on the `layout: "centered"` shell |
+| Login    | `/login`   | `/login`    | `phone` + `fullName` `ContentInput` + a `login` `ContentButton` ⇒ `form` + `cubitCall auth.requestOtp`, on the `layout: "centered"` shell |
+| OTP      | `/auth/otp-reset` | `/auth/otp-reset` | An `otpCode` `ContentInput` ⇒ `otpInput` + a `verifyOtp` `ContentButton` ⇒ `cubitCall auth.verifyOtp`. Completes the flow to `/home` |
 
 
-One `ZoneDrawer` in `zones` (`side: "right"`) becomes the `appDrawer` on **both** pages.
+One `ZoneDrawer` in `zones` (`side: "right"`) becomes the `appDrawer` on **all three** pages.
 
-Two pages means a **two-tab bar** — this is the clearest case for why the tab list is derived from
-`pages[]` rather than fixed ([§ 7.3](#73-tabs-are-derived-from-the-pages)). A content site has no
+Three pages, **two tabs** — this is the clearest case for why the tab list is derived from `pages[]`
+rather than fixed ([§ 7.3](#73-tabs-are-derived-from-the-pages)). A content site has no
 `/categories`, `/search`, `/cart` or `/profile`, so a fixed five-tab bar would leave four tabs
 navigating nowhere:
 
@@ -3693,7 +3932,7 @@ navigating nowhere:
 "navigation": {
   "type": "tabs",
   "initialRoute": "/splash",
-  "shellExcludeRoutes": ["/splash", "/splash-carousel", "/auth/login", "…", "/orders"],
+  "shellExcludeRoutes": ["/splash", "/splash-carousel", "/auth/login", "/auth/otp-reset", "…", "/orders"],
   "tabs": [
     { "id": "tab-home", "label": "الرئيسية", "icon": "home", "route": "/home" },
     { "id": "tab-login", "label": "تسجيل الدخول", "icon": "person", "route": "/login" }
@@ -3701,8 +3940,9 @@ navigating nowhere:
 }
 ```
 
-Neither page route is shell-excluded — both are tab roots. The list keeps only the engine's own
-routes, `/auth/login` among them, which is a different route from this site's `/login` page.
+Neither content route is shell-excluded — both are tab roots. `/auth/otp-reset` is: it is a page the
+router needs but not a destination the user navigates to on their own. `/auth/login` stays in the
+list too, and is a different route from this site's own `/login` page.
 
 ### 15.1 Theme — what the root props actually move
 
@@ -3923,43 +4163,76 @@ the full width at its natural height:
 `ContentLink` blocks carry `icon: "none"` deliberately: any other icon is dropped with a warning,
 because the engine `button` has no icon prop.
 
-### 15.4 Login — two inputs
+### 15.4 Login and OTP — the flow end to end
 
-Same machinery as [§ 14.2](#142-login--form--cubitcall-authlogin), minus the "remember me" switch.
-The theme changes; the auth contract does not. The credential is still `phone` / `inputType: "tel"`,
-and the page is still `layout: "centered"` — both are engine requirements, not styling choices
+Same machinery as [§ 14.2](#142-login--form--cubitcall-authrequestotp), minus the "remember me"
+switch. The theme changes; the auth contract does not. The credential is still `phone` /
+`inputType: "tel"`, the code field is still an `otpInput`, and both pages are still
+`layout: "centered"` — all engine requirements, not styling choices
 ([§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none),
-[§ 7.2](#72-authlogin-binds-phone--never-email)).
+[§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method)).
+
+**Step 1** — `/login`, `buttonAction: "login"`:
 
 ```json
 {
   "id": "button-35",
   "type": "button",
-  "props": { "label": "دخول", "variant": "elevated", "height": 56 },
+  "props": { "label": "إرسال رمز التحقق", "variant": "elevated", "height": 56 },
   "tap": {
     "type": "cubitCall",
     "cubit": "auth",
-    "method": "login",
+    "method": "requestOtp",
     "requireValidForm": true,
-    "formId": "login-form",
+    "formId": "otp-request-form",
     "params": {
       "phone": { "source": "form", "field": "phone" },
-      "password": { "source": "form", "field": "password" }
+      "fullName": { "source": "form", "field": "fullName" },
+      "tenantSlug": { "source": "app", "field": "tenantSlug" }
     },
-    "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "go" }
+    "onSuccess": { "type": "navigate", "route": "/auth/otp-reset", "navigation_type": "clear_stack" }
   }
 }
 ```
 
-Both fields get `textDirection: "ltr"`; `phone` additionally gets `keyboardType: "phone"` +
-`validatePhone`, and `password` gets `obscureText: true`.
+**Step 2** — `/auth/otp-reset`, `buttonAction: "verifyOtp"`, submitting the `otpInput` beside it:
 
-> **This example used to be wrong.** It shipped an `email` credential and a bare `scroll: "none"`
-> page, which converts cleanly and renders a login screen that cannot log in and overflows on a
-> short viewport. Params are built from whatever fields the Section contains, so the converter will
-> happily emit a dead param — it now warns instead of staying silent. If you are copying an older
-> revision of this section, re-read [§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none)
-> and [§ 7.2](#72-authlogin-binds-phone--never-email) first.
+```json
+{
+  "id": "otp-50",
+  "type": "otpInput",
+  "props": { "fieldId": "otpCode", "length": 6, "autofocus": true, "validateRequired": true, "validateMinLength": 6, "validateMaxLength": 6 }
+},
+{
+  "id": "button-51",
+  "type": "button",
+  "props": { "label": "تأكيد", "variant": "elevated", "height": 56 },
+  "tap": {
+    "type": "cubitCall",
+    "cubit": "auth",
+    "method": "verifyOtp",
+    "requireValidForm": true,
+    "formId": "otp-verify-form",
+    "params": {
+      "phone": { "source": "authState", "field": "phone" },
+      "otpCode": { "source": "form", "field": "otpCode" },
+      "tenantSlug": { "source": "app", "field": "tenantSlug" }
+    },
+    "onSuccess": { "type": "navigate", "route": "/home", "navigation_type": "clear_stack" }
+  }
+}
+```
+
+`phone` gets `textDirection: "ltr"` + `keyboardType: "phone"` + `validatePhone`; `fullName` keeps the
+app's RTL direction. Nothing carries a password: the flow has none.
+
+> **This example used to be wrong — twice.** It first shipped an `email` credential and a bare
+> `scroll: "none"` page. It then shipped `cubitCall auth.login` with a `password` param and no OTP
+> screen at all: a method `AuthCubit` does not have, a field the request body does not have, and a
+> flow that stopped halfway. All three convert cleanly and none of them can sign a user in. The
+> converter now warns on each. If you are copying an older revision of this section, re-read
+> [§ 7.1](#71-auth-and-splash-pages-use-layout-centered-not-scroll-none) and
+> [§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method) first.
 
 ---
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { transformWebToMobile, EXAMPLE_PRESETS, TransformResult } from "./transformer";
+import { transformWebToMobile, EXAMPLE_PRESETS, TENANT_PLACEHOLDER_WARNING, TransformResult } from "./transformer";
 
 type Ok = Extract<TransformResult, { success: true }>;
 type Node = Record<string, unknown>;
@@ -893,8 +893,8 @@ describe("transformWebToMobile", () => {
       const current = EXAMPLE_PRESETS.filter((p) => !p.legacy);
       expect(current).toHaveLength(2);
       expect(current).toEqual([EXAMPLE_PRESETS[0], EXAMPLE_PRESETS[1]]);
-      expect(current[0].label).toContain("3 pages");
-      expect(current[1].label).toContain("2 pages");
+      expect(current[0].label).toContain("4 pages");
+      expect(current[1].label).toContain("3 pages");
     });
 
     it("gives every legacy preset a reason", () => {
@@ -926,27 +926,48 @@ describe("transformWebToMobile", () => {
       }
     });
 
-    it("every non-legacy preset converts without warnings", () => {
+    // The tenant placeholder is the one warning a preset is *expected* to raise: the examples have
+    // no merchant behind them, and their auth actions read tenantSlug out of the app envelope.
+    it("every non-legacy preset converts without warnings beyond the tenant placeholder", () => {
       for (const preset of EXAMPLE_PRESETS.filter((p) => !p.legacy)) {
         const result = transformWebToMobile(preset.json) as Extract<TransformResult, { success: true }>;
-        expect(result.warnings ?? [], preset.label).toEqual([]);
+        const unexpected = (result.warnings ?? []).filter((w) => w !== TENANT_PLACEHOLDER_WARNING);
+        expect(unexpected, preset.label).toEqual([]);
       }
     });
 
-    describe("canonical 3-page mobile example", () => {
+    it("warns that the tenant is a placeholder, and stops once one is injected", () => {
+      for (const preset of EXAMPLE_PRESETS.filter((p) => !p.legacy)) {
+        const placeholder = transformWebToMobile(preset.json) as Ok;
+        expect(placeholder.warnings, preset.label).toContain(TENANT_PLACEHOLDER_WARNING);
+
+        const injected = transformWebToMobile(preset.json, {
+          apiBaseUrl: "https://api.example.test",
+          tenantId: "9f1c2f6e-0000-4b7a-9a11-2c3d4e5f6789",
+          tenantSlug: "dar-alhirfa",
+        }) as Ok;
+        expect(injected.warnings ?? [], preset.label).toEqual([]);
+        expect((injected.output as Record<string, unknown>).app).toMatchObject({
+          apiBaseUrl: "https://api.example.test",
+          tenantSlug: "dar-alhirfa",
+        });
+      }
+    });
+
+    describe("canonical 4-page mobile example", () => {
       const result = transformWebToMobile(EXAMPLE_PRESETS[0].json) as Extract<TransformResult, { success: true }>;
       const pages = (result.output as Record<string, unknown>).pages as Record<string, unknown>[];
       const page = (route: string) => pages.find((p) => p.route === route) as Record<string, unknown>;
 
-      it("converts with no warnings", () => {
-        expect(result.warnings ?? []).toEqual([]);
+      it("converts with no warnings beyond the tenant placeholder", () => {
+        expect(result.warnings ?? []).toEqual([TENANT_PLACEHOLDER_WARNING]);
       });
 
-      it("emits the three expected routes with / normalized to /home", () => {
-        expect(pages.map((p) => p.route)).toEqual(["/home", "/login", "/products"]);
+      it("emits the four expected routes with / normalized to /home", () => {
+        expect(pages.map((p) => p.route)).toEqual(["/home", "/login", "/auth/otp-reset", "/products"]);
       });
 
-      it("builds one tab per page and shell-excludes no page route", () => {
+      it("keeps the OTP screen off the tab bar but in pages[]", () => {
         const nav = (result.output as Record<string, unknown>).navigation as Record<string, unknown>;
         expect(nav.tabs).toEqual([
           { id: "tab-home", label: "الرئيسية", icon: "home", route: "/home" },
@@ -957,6 +978,10 @@ describe("transformWebToMobile", () => {
         for (const route of ["/home", "/login", "/products"]) {
           expect(excluded, route).not.toContain(route);
         }
+        // Shell-excluded (no bottom bar on an auth screen) but still a real page — the app
+        // registers routes from pages[] only, so requestOtp would dead-end without it.
+        expect(excluded).toContain("/auth/otp-reset");
+        expect(page("/auth/otp-reset")).toBeDefined();
         expect(excluded).toContain("/checkout");
       });
 
@@ -976,38 +1001,70 @@ describe("transformWebToMobile", () => {
         expect(json).not.toContain("urlPath");
       });
 
-      it("login page wraps its fields in a form that the login button submits", () => {
+      it("login page submits auth.requestOtp and hands off to the OTP screen", () => {
         const p = page("/login");
         const section = sectionsOf(p)[0];
         const form = section.child as Record<string, unknown>;
         expect(form.type).toBe("form");
-        expect(form.props).toMatchObject({ formId: "login-form", id: "login-form" });
+        expect(form.props).toMatchObject({ formId: "otp-request-form", id: "otp-request-form" });
 
         const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
-        const button = children.find((c) => c.type === "button" && (c.props as Record<string, unknown>).label === "دخول")!;
+        const button = children.find((c) => c.type === "button" && (c.props as Record<string, unknown>).label === "إرسال رمز التحقق")!;
         expect(button.tap).toEqual({
           type: "cubitCall",
           cubit: "auth",
-          method: "login",
+          method: "requestOtp",
           requireValidForm: true,
-          formId: "login-form",
+          formId: "otp-request-form",
           params: {
             phone: { source: "form", field: "phone" },
-            password: { source: "form", field: "password" },
+            fullName: { source: "form", field: "fullName" },
+            tenantSlug: { source: "app", field: "tenantSlug" },
           },
-          onSuccess: { type: "navigate", route: "/home", navigation_type: "go" },
+          onSuccess: { type: "navigate", route: "/auth/otp-reset", navigation_type: "clear_stack" },
         });
       });
 
-      it("login page emits ltr obscured password and a switchField", () => {
+      it("login page emits an ltr phone field and keeps the rememberMe switch unsubmitted", () => {
         const form = sectionsOf(page("/login"))[0].child as Record<string, unknown>;
         const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
-        const password = children.find((c) => (c.props as Record<string, unknown>).id === "password")!;
-        expect(password.type).toBe("textFormField");
-        expect(password.props).toMatchObject({ obscureText: true, textDirection: "ltr" });
+        const phone = children.find((c) => (c.props as Record<string, unknown>).id === "phone")!;
+        expect(phone.type).toBe("textFormField");
+        expect(phone.props).toMatchObject({ textDirection: "ltr", keyboardType: "phone", validatePhone: true });
 
         const remember = children.find((c) => c.type === "switchField")!;
         expect(remember.props).toMatchObject({ id: "rememberMe", label: "تذكّرني" });
+      });
+
+      it("otp page renders an otpInput and verifies against authState + the form code", () => {
+        const form = sectionsOf(page("/auth/otp-reset"))[0].child as Record<string, unknown>;
+        expect(form.props).toMatchObject({ formId: "otp-verify-form", id: "otp-verify-form" });
+
+        const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
+        const otp = children.find((c) => c.type === "otpInput")!;
+        expect(otp.props).toMatchObject({ fieldId: "otpCode", length: 6, validateMinLength: 6, validateMaxLength: 6 });
+
+        const button = children.find((c) => c.type === "button")!;
+        expect(button.tap).toEqual({
+          type: "cubitCall",
+          cubit: "auth",
+          method: "verifyOtp",
+          requireValidForm: true,
+          formId: "otp-verify-form",
+          params: {
+            phone: { source: "authState", field: "phone" },
+            otpCode: { source: "form", field: "otpCode" },
+            tenantSlug: { source: "app", field: "tenantSlug" },
+          },
+          onSuccess: { type: "navigate", route: "/home", navigation_type: "clear_stack" },
+        });
+      });
+
+      it("puts both auth pages on the centered shell", () => {
+        for (const route of ["/login", "/auth/otp-reset"]) {
+          expect(page(route).layout, route).toBe("centered");
+          expect(page(route).scroll, route).toBeUndefined();
+        }
       });
 
       it("products page converts the card template to a bound gridView", () => {
@@ -1027,15 +1084,15 @@ describe("transformWebToMobile", () => {
       });
     });
 
-    describe("canonical 2-page about-us example", () => {
+    describe("canonical 3-page about-us example", () => {
       const result = transformWebToMobile(EXAMPLE_PRESETS[1].json) as Extract<TransformResult, { success: true }>;
       const output = result.output as Record<string, unknown>;
       const pages = output.pages as Record<string, unknown>[];
       const page = (route: string) => pages.find((p) => p.route === route) as Record<string, unknown>;
       const theme = output.theme as Record<string, unknown>;
 
-      it("emits the two expected routes", () => {
-        expect(pages.map((p) => p.route)).toEqual(["/home", "/login"]);
+      it("emits the three expected routes", () => {
+        expect(pages.map((p) => p.route)).toEqual(["/home", "/login", "/auth/otp-reset"]);
       });
 
       it("resolves the serif bodyFont instead of forcing Tajawal on an Arabic store", () => {
@@ -1055,7 +1112,7 @@ describe("transformWebToMobile", () => {
         expect(theme.spacing).toEqual({ xs: 4, sm: 14, md: 20, lg: 40, xl: 56 });
       });
 
-      it("puts the drawer on the end edge of both pages", () => {
+      it("puts the drawer on the end edge of every page", () => {
         for (const p of pages) {
           const drawer = p.appDrawer as Record<string, unknown>;
           expect(drawer, p.route as string).toBeDefined();
@@ -1093,25 +1150,52 @@ describe("transformWebToMobile", () => {
         expect(button.tap).toEqual({ type: "navigate", route: "/login", navigation_type: "push" });
       });
 
-      it("submits the two login inputs through cubitCall auth.login", () => {
+      it("submits the two login inputs through cubitCall auth.requestOtp", () => {
         const form = sectionsOf(page("/login"))[0].child as Record<string, unknown>;
         expect(form.type).toBe("form");
 
         const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
         const fields = children.filter((c) => c.type === "textFormField");
-        expect(fields.map((f) => (f.props as Record<string, unknown>).id)).toEqual(["phone", "password"]);
+        expect(fields.map((f) => (f.props as Record<string, unknown>).id)).toEqual(["phone", "fullName"]);
 
         const button = children.find((c) => c.type === "button")!;
         expect(button.tap).toMatchObject({
           type: "cubitCall",
           cubit: "auth",
-          method: "login",
+          method: "requestOtp",
           requireValidForm: true,
-          formId: "login-form",
+          formId: "otp-request-form",
           params: {
             phone: { source: "form", field: "phone" },
-            password: { source: "form", field: "password" },
+            fullName: { source: "form", field: "fullName" },
+            tenantSlug: { source: "app", field: "tenantSlug" },
           },
+          onSuccess: { type: "navigate", route: "/auth/otp-reset", navigation_type: "clear_stack" },
+        });
+      });
+
+      // The whole point of the example: requestOtp lands on a route that exists, and the screen
+      // behind it can finish the flow without asking for the phone number again.
+      it("completes the flow on an /auth/otp-reset page that verifies the code", () => {
+        const otpPage = page("/auth/otp-reset");
+        expect(otpPage).toBeDefined();
+        expect(otpPage.layout).toBe("centered");
+
+        const form = sectionsOf(otpPage)[0].child as Record<string, unknown>;
+        const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
+        expect(children.find((c) => c.type === "otpInput")!.props).toMatchObject({ fieldId: "otpCode", length: 6 });
+        expect(children.find((c) => c.type === "textFormField")).toBeUndefined();
+
+        expect(children.find((c) => c.type === "button")!.tap).toMatchObject({
+          cubit: "auth",
+          method: "verifyOtp",
+          formId: "otp-verify-form",
+          params: {
+            phone: { source: "authState", field: "phone" },
+            otpCode: { source: "form", field: "otpCode" },
+            tenantSlug: { source: "app", field: "tenantSlug" },
+          },
+          onSuccess: { type: "navigate", route: "/home", navigation_type: "clear_stack" },
         });
       });
     });
@@ -1233,10 +1317,12 @@ describe("transformWebToMobile", () => {
       expect(sectionChild(result).type).toBe("column");
     });
 
-    it("excludes rememberMe and password confirmations from the submitted params", () => {
+    // The params are the cubit's, not the form's: requestOtp binds phone + fullName + tenantSlug
+    // and nothing else, however many fields the merchant authored.
+    it("sends only the params auth.requestOtp binds, whatever else the form collects", () => {
       const result = loginPage([
         { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
-        { type: "ContentInput", props: { name: "password", inputType: "password" } },
+        { type: "ContentInput", props: { name: "fullName" } },
         { type: "ContentInput", props: { name: "passwordConfirm", inputType: "password" } },
         { type: "ContentSwitch", props: { name: "rememberMe" } },
         { type: "ContentButton", props: { label: "دخول", destinationType: "action", buttonAction: "login" } },
@@ -1244,7 +1330,44 @@ describe("transformWebToMobile", () => {
       const form = sectionChild(result);
       const children = (form.child as Record<string, unknown>).children as Record<string, unknown>[];
       const tap = children.find((c) => c.type === "button")!.tap as Record<string, unknown>;
-      expect(Object.keys(tap.params as Record<string, unknown>)).toEqual(["phone", "password"]);
+      expect(Object.keys(tap.params as Record<string, unknown>)).toEqual(["phone", "fullName", "tenantSlug"]);
+    });
+
+    it("drops the optional fullName param when the form has no such field", () => {
+      const result = loginPage([
+        { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
+        { type: "ContentButton", props: { label: "دخول", destinationType: "action", buttonAction: "login" } },
+      ]);
+      const children = ((sectionChild(result).child as Record<string, unknown>).children) as Record<string, unknown>[];
+      const tap = children.find((c) => c.type === "button")!.tap as Record<string, unknown>;
+      expect(Object.keys(tap.params as Record<string, unknown>)).toEqual(["phone", "tenantSlug"]);
+    });
+
+    it("converts an otpCode ContentInput into the engine's otpInput", () => {
+      const result = loginPage([
+        { type: "ContentInput", props: { label: "الرمز", name: "otpCode", placeholder: "______" } },
+        { type: "ContentButton", props: { label: "تأكيد", destinationType: "action", buttonAction: "verifyOtp" } },
+      ]);
+      const children = ((sectionChild(result).child as Record<string, unknown>).children) as Record<string, unknown>[];
+      const otp = children.find((c) => c.type === "otpInput")!;
+      expect(otp.props).toEqual({
+        fieldId: "otpCode",
+        length: 6,
+        autofocus: true,
+        validateRequired: true,
+        validateMinLength: 6,
+        validateMaxLength: 6,
+      });
+    });
+
+    // The engine has no AuthCubit.login and no password in the flow: `login` is step 1 of
+    // requestOtp → verifyOtp (docs/06-feature-auth.md).
+    it("never emits a login method or a password param", () => {
+      for (const preset of EXAMPLE_PRESETS.filter((p) => !p.legacy)) {
+        const json = JSON.stringify((transformWebToMobile(preset.json) as Ok).output);
+        expect(json, preset.label).not.toContain('"method":"login"');
+        expect(json, preset.label).not.toContain('"password"');
+      }
     });
 
     it("keeps each Section's form scope separate", () => {
@@ -1271,7 +1394,7 @@ describe("transformWebToMobile", () => {
 
       const children = ((body[0].child as Record<string, unknown>).child as Record<string, unknown>).children as Record<string, unknown>[];
       const tap = children.find((c) => c.type === "button")!.tap as Record<string, unknown>;
-      expect(Object.keys(tap.params as Record<string, unknown>)).toEqual(["phone"]);
+      expect(Object.keys(tap.params as Record<string, unknown>)).toEqual(["phone", "tenantSlug"]);
     });
 
     // Regression: a bare `scroll: "none"` leaves the form shrink-wrapped under the app bar with
@@ -1280,7 +1403,7 @@ describe("transformWebToMobile", () => {
     describe("centered page shell", () => {
       const credentials = [
         { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
-        { type: "ContentInput", props: { name: "password", inputType: "password" } },
+        { type: "ContentInput", props: { name: "fullName" } },
         { type: "ContentButton", props: { label: "دخول", destinationType: "action", buttonAction: "login" } },
       ];
 
@@ -1340,43 +1463,98 @@ describe("transformWebToMobile", () => {
     });
 
     // Regression: the engine's auth cubit is a customer phone/OTP flow (docs/06-feature-auth.md),
-    // so an email/username login submits a param AuthCubit cannot bind — the button validates, the
-    // call fires, and nobody signs in.
+    // so an email/username/password login submits params AuthCubit cannot bind — the button
+    // validates, the call fires, and nobody signs in.
     describe("credential field contract", () => {
-      const warningsFor = (content: Record<string, unknown>[]) => loginPage(content).warnings ?? [];
+      // Only the auth warnings; the tenant placeholder and the dangling /auth/otp-reset route are
+      // properties of these one-page fixtures, not of the credential rules under test.
+      const authWarningsFor = (content: Record<string, unknown>[]) =>
+        (loginPage(content).warnings ?? []).filter((w) => w.startsWith('Auth "'));
 
-      it("accepts a phone credential without warning", () => {
-        expect(warningsFor([
+      it("accepts a phone + fullName credential without warning", () => {
+        expect(authWarningsFor([
           { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
-          { type: "ContentInput", props: { name: "password", inputType: "password" } },
+          { type: "ContentInput", props: { name: "fullName" } },
           { type: "ContentButton", props: { destinationType: "action", buttonAction: "login" } },
         ])).toEqual([]);
       });
 
       it("warns and names the offending field when the credential is an email", () => {
-        const warnings = warningsFor([
+        const warnings = authWarningsFor([
           { type: "ContentInput", props: { name: "email", inputType: "email" } },
-          { type: "ContentInput", props: { name: "password", inputType: "password" } },
           { type: "ContentButton", props: { destinationType: "action", buttonAction: "login" } },
         ]);
-        expect(warnings).toHaveLength(1);
+        expect(warnings).toHaveLength(2); // no phone, and email is not a bindable param
         expect(warnings[0]).toContain('found "email"');
         expect(warnings[0]).toContain("phone/OTP");
       });
 
-      it("warns when the only field is a password", () => {
-        const warnings = warningsFor([
+      it("warns that a password field is never submitted", () => {
+        const warnings = authWarningsFor([
+          { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
           { type: "ContentInput", props: { name: "password", inputType: "password" } },
           { type: "ContentButton", props: { destinationType: "action", buttonAction: "login" } },
         ]);
         expect(warnings).toHaveLength(1);
-        expect(warnings[0]).not.toContain("found");
+        expect(warnings[0]).toContain('"password" is not part of the engine\'s OTP flow');
+      });
+
+      it("warns when an OTP form has no otpCode field", () => {
+        const warnings = authWarningsFor([
+          { type: "ContentInput", props: { name: "code" } },
+          { type: "ContentButton", props: { destinationType: "action", buttonAction: "verifyOtp" } },
+        ]);
+        expect(warnings[0]).toContain('no "otpCode" field');
       });
 
       it("stays quiet for a form with no auth button", () => {
-        expect(warningsFor([
+        expect(authWarningsFor([
           { type: "ContentInput", props: { name: "email", inputType: "email" } },
         ])).toEqual([]);
+      });
+    });
+
+    // The app builds its router from pages[] — nothing is natively mounted — so requestOtp's
+    // success navigate is a dead end unless the merchant authored the screen behind it.
+    describe("auth route targets", () => {
+      const otpRouteWarnings = (result: Ok) =>
+        (result.warnings ?? []).filter((w) => w.includes("/auth/otp-reset"));
+
+      const loginSection = {
+        type: "Section",
+        props: {
+          content: [
+            { type: "ContentInput", props: { name: "phone", inputType: "tel" } },
+            { type: "ContentButton", props: { destinationType: "action", buttonAction: "login" } },
+          ],
+        },
+      };
+      const otpSection = {
+        type: "Section",
+        props: {
+          content: [
+            { type: "ContentInput", props: { name: "otpCode" } },
+            { type: "ContentButton", props: { destinationType: "action", buttonAction: "verifyOtp" } },
+          ],
+        },
+      };
+
+      it("warns when requestOtp navigates to an OTP page that was never authored", () => {
+        const result = transformWebToMobile(JSON.stringify({
+          pages: [{ path: "/login", content: [loginSection] }],
+        })) as Ok;
+        expect(otpRouteWarnings(result)).toHaveLength(1);
+        expect(otpRouteWarnings(result)[0]).toContain("no page defines that route");
+      });
+
+      it("stays quiet once the OTP page exists", () => {
+        const result = transformWebToMobile(JSON.stringify({
+          pages: [
+            { path: "/login", content: [loginSection] },
+            { path: "/auth/otp-reset", content: [otpSection] },
+          ],
+        })) as Ok;
+        expect(otpRouteWarnings(result)).toEqual([]);
       });
     });
   });
