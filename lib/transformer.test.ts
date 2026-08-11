@@ -596,7 +596,9 @@ describe("transformWebToMobile", () => {
       const gridView = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0];
       expect(gridView.type).toBe("gridView");
       expect((gridView.itemBuilder as Record<string, unknown>).type).toBe("repeat");
-      expect((gridView.props as Record<string, unknown>).requestUrl).toContain("/api/v1/public/products");
+      expect((gridView.props as Record<string, unknown>).data).toMatchObject({
+        requestUrl: expect.stringContaining("/api/v1/public/products"),
+      });
     });
   });
 
@@ -889,12 +891,13 @@ describe("transformWebToMobile", () => {
       }
     });
 
-    it("exposes exactly the two canonical mobile examples as non-legacy", () => {
+    it("exposes exactly the three canonical mobile examples as non-legacy", () => {
       const current = EXAMPLE_PRESETS.filter((p) => !p.legacy);
-      expect(current).toHaveLength(2);
-      expect(current).toEqual([EXAMPLE_PRESETS[0], EXAMPLE_PRESETS[1]]);
+      expect(current).toHaveLength(3);
+      expect(current).toEqual([EXAMPLE_PRESETS[0], EXAMPLE_PRESETS[1], EXAMPLE_PRESETS[2]]);
       expect(current[0].label).toContain("4 pages");
       expect(current[1].label).toContain("3 pages");
+      expect(current[2].label).toContain("about us · login · otp · products");
     });
 
     it("gives every legacy preset a reason", () => {
@@ -926,8 +929,10 @@ describe("transformWebToMobile", () => {
       }
     });
 
-    // The tenant placeholder is the one warning a preset is *expected* to raise: the examples have
-    // no merchant behind them, and their auth actions read tenantSlug out of the app envelope.
+    // The tenant placeholder is the one warning auth-bearing presets are *expected* to raise.
+    const presetUsesAuth = (json: string) =>
+      /"buttonAction"\s*:\s*"(login|verifyOtp)"/.test(json);
+
     it("every non-legacy preset converts without warnings beyond the tenant placeholder", () => {
       for (const preset of EXAMPLE_PRESETS.filter((p) => !p.legacy)) {
         const result = transformWebToMobile(preset.json) as Extract<TransformResult, { success: true }>;
@@ -936,10 +941,14 @@ describe("transformWebToMobile", () => {
       }
     });
 
-    it("warns that the tenant is a placeholder, and stops once one is injected", () => {
+    it("warns that the tenant is a placeholder for auth presets, and stops once one is injected", () => {
       for (const preset of EXAMPLE_PRESETS.filter((p) => !p.legacy)) {
         const placeholder = transformWebToMobile(preset.json) as Ok;
-        expect(placeholder.warnings, preset.label).toContain(TENANT_PLACEHOLDER_WARNING);
+        if (presetUsesAuth(preset.json)) {
+          expect(placeholder.warnings, preset.label).toContain(TENANT_PLACEHOLDER_WARNING);
+        } else {
+          expect(placeholder.warnings ?? [], preset.label).toEqual([]);
+        }
 
         const injected = transformWebToMobile(preset.json, {
           apiBaseUrl: "https://api.example.test",
@@ -1072,15 +1081,40 @@ describe("transformWebToMobile", () => {
         expect(grid.type).toBe("gridView");
         expect(grid.props).toMatchObject({
           crossAxisCount: 2, // columnsMobile wins over columns: 3
+          emptyMessage: "لا توجد منتجات",
+          errorMessage: "حدث خطأ",
+        });
+        const data = (grid.props as Record<string, unknown>).data as Record<string, unknown>;
+        expect(data).toMatchObject({
+          source: "collection",
           requestKey: "product-list",
           requestUrl: "/api/v1/public/collections/coll_featured/products?page=0&size=20",
+          page: 0,
+          size: 20,
+          collection: "coll_featured",
         });
         const item = (grid.itemBuilder as Record<string, unknown>).item as Record<string, unknown>;
+        expect(item.tap).toEqual({
+          type: "navigate",
+          route: "/product/details/:productId",
+          navigation_type: "push",
+        });
         const cardChildren = (item.child as Record<string, unknown>).children as Record<string, unknown>[];
         expect((cardChildren[0].props as Record<string, unknown>).urlPath).toBe("item.primaryImageUrl");
         expect((cardChildren[1].props as Record<string, unknown>).valuePath).toBe("item.name");
         expect((cardChildren[2].props as Record<string, unknown>).valuePath).toBe("item.price");
-        expect(cardChildren[3].tap).toEqual({ type: "cubitCall", cubit: "cart", method: "addItem" });
+        expect(cardChildren[3].tap).toEqual({
+          type: "cubitCall",
+          cubit: "cart",
+          method: "addItem",
+          params: {
+            variantId: { source: "item", field: "variantId" },
+            quantity: { source: "value", value: 1 },
+            productTitle: { source: "item", field: "name" },
+            unitPrice: { source: "item", field: "price" },
+            thumbnailUrl: { source: "item", field: "primaryImageUrl" },
+          },
+        });
       });
     });
 
@@ -1197,6 +1231,96 @@ describe("transformWebToMobile", () => {
           },
           onSuccess: { type: "navigate", route: "/home", navigation_type: "clear_stack" },
         });
+      });
+    });
+
+    describe("canonical Example 3 — about us · login · otp · products · cart", () => {
+      const result = transformWebToMobile(EXAMPLE_PRESETS[2].json) as Extract<TransformResult, { success: true }>;
+      const output = result.output as Record<string, unknown>;
+      const pages = output.pages as Record<string, unknown>[];
+      const page = (route: string) => pages.find((p) => p.route === route) as Record<string, unknown>;
+      const nav = output.navigation as Record<string, unknown>;
+      const theme = output.theme as Record<string, unknown>;
+
+      it("emits all five routes from Example 2 plus products and cart", () => {
+        expect(pages.map((p) => p.route)).toEqual([
+          "/home", "/login", "/auth/otp-reset", "/products", "/cart",
+        ]);
+      });
+
+      it("keeps the serif theme from Example 2", () => {
+        expect((theme.typography as Record<string, unknown>).fontFamily).toBe("Amiri");
+        expect(theme.colors).toMatchObject({ primary: "#7c3f5d", surface: "#faf3ee", text: "#2f2320" });
+      });
+
+      it("derives four tabs — otp stays shell-excluded", () => {
+        expect(nav.tabs).toEqual([
+          { id: "tab-home", label: "الرئيسية", icon: "home", route: "/home" },
+          { id: "tab-login", label: "تسجيل الدخول", icon: "person", route: "/login" },
+          { id: "tab-products", label: "المنتجات", icon: "grid_view", route: "/products" },
+          { id: "tab-cart", label: "السلة", icon: "shopping_cart", route: "/cart" },
+        ]);
+        expect((nav.shellExcludeRoutes as string[])).toContain("/auth/otp-reset");
+      });
+
+      it("completes the OTP auth flow from Example 2", () => {
+        const loginForm = sectionsOf(page("/login"))[0].child as Record<string, unknown>;
+        expect(loginForm.type).toBe("form");
+        const loginButton = ((loginForm.child as Record<string, unknown>).children as Record<string, unknown>[])
+          .find((c) => c.type === "button")!;
+        expect(loginButton.tap).toMatchObject({ cubit: "auth", method: "requestOtp" });
+
+        const otpForm = sectionsOf(page("/auth/otp-reset"))[0].child as Record<string, unknown>;
+        const otpChildren = (otpForm.child as Record<string, unknown>).children as Record<string, unknown>[];
+        expect(otpChildren.find((c) => c.type === "otpInput")).toBeDefined();
+        expect(otpChildren.find((c) => c.type === "button")!.tap).toMatchObject({
+          cubit: "auth",
+          method: "verifyOtp",
+          onSuccess: { type: "navigate", route: "/home", navigation_type: "clear_stack" },
+        });
+      });
+
+      it("products page uses products-page preset with full catalogue data binding", () => {
+        const grid = ((page("/products").body as Record<string, unknown>[])[1].child as Record<string, unknown>);
+        expect(grid.type).toBe("gridView");
+        const data = (grid.props as Record<string, unknown>).data as Record<string, unknown>;
+        expect(data).toMatchObject({
+          source: "collection",
+          requestKey: "product-list",
+          requestUrl: "/api/v1/public/products?page=0&size=20",
+          page: 0,
+          size: 20,
+        });
+        expect(data.collection).toBeUndefined();
+
+        const item = (grid.itemBuilder as Record<string, unknown>).item as Record<string, unknown>;
+        expect(item.tap).toEqual({
+          type: "navigate",
+          route: "/product/details/:productId",
+          navigation_type: "push",
+        });
+        const cardChildren = (item.child as Record<string, unknown>).children as Record<string, unknown>[];
+        expect((cardChildren[0].props as Record<string, unknown>).urlPath).toBe("item.primaryImageUrl");
+        expect((cardChildren[1].props as Record<string, unknown>).valuePath).toBe("item.name");
+        expect((cardChildren[2].props as Record<string, unknown>).valuePath).toBe("item.price");
+        expect(cardChildren[3].tap).toMatchObject({
+          type: "cubitCall",
+          cubit: "cart",
+          method: "addItem",
+          params: {
+            variantId: { source: "item", field: "variantId" },
+            productTitle: { source: "item", field: "name" },
+            unitPrice: { source: "item", field: "price" },
+          },
+        });
+      });
+
+      it("cart page collapses cartLineId into listView over cart.items", () => {
+        const body = page("/cart").body as Record<string, unknown>[];
+        const children = ((body[0].child as Record<string, unknown>).children as Record<string, unknown>[]);
+        const list = children.find((c) => c.type === "listView")!;
+        expect(list).toBeDefined();
+        expect((list.itemBuilder as Record<string, unknown>).source).toBe("cart.items");
       });
     });
   });
@@ -1676,7 +1800,8 @@ describe("transformWebToMobile", () => {
       const body = ((result.output as Record<string, unknown>).pages as Record<string, unknown>[])[0].body as Record<string, unknown>[];
       const grid = (((body[0].child as Record<string, unknown>).children as Record<string, unknown>[])[0]);
       expect(grid.type).toBe("gridView");
-      expect((grid.props as Record<string, unknown>).requestUrl).toContain("/api/v1/public/collections/featured/products");
+      expect(((grid.props as Record<string, unknown>).data as Record<string, unknown>).requestUrl)
+        .toContain("/api/v1/public/collections/featured/products");
     });
 
     it("converts Testimonials block from inlineItems", () => {
@@ -2239,8 +2364,10 @@ describe("transformWebToMobile", () => {
         expect(grid.type).toBe("gridView");
         const gridProps = grid.props as Record<string, unknown>;
         expect(gridProps.crossAxisCount).toBe(2);
-        expect(gridProps.requestKey).toBe("product-list");
-        expect(gridProps.requestUrl).toBe("/api/v1/public/collections/coll_featured/products?page=0&size=20");
+        const data = gridProps.data as Record<string, unknown>;
+        expect(data.requestKey).toBe("product-list");
+        expect(data.requestUrl).toBe("/api/v1/public/collections/coll_featured/products?page=0&size=20");
+        expect(data.collection).toBe("coll_featured");
 
         const itemBuilder = grid.itemBuilder as Record<string, unknown>;
         expect(itemBuilder.type).toBe("repeat");
@@ -2271,7 +2398,7 @@ describe("transformWebToMobile", () => {
           content: [cardTemplateGroup],
         })) as Extract<TransformResult, { success: true }>;
 
-        expect((gridOf(result).props as Record<string, unknown>).requestUrl)
+        expect(((gridOf(result).props as Record<string, unknown>).data as Record<string, unknown>).requestUrl)
           .toBe("/api/v1/public/collections/featured/products?page=0&size=20");
       });
 
@@ -2292,7 +2419,7 @@ describe("transformWebToMobile", () => {
           content: [cardTemplateGroup],
         })) as Extract<TransformResult, { success: true }>;
 
-        expect((gridOf(result).props as Record<string, unknown>).requestUrl)
+        expect(((gridOf(result).props as Record<string, unknown>).data as Record<string, unknown>).requestUrl)
           .toBe("/api/v1/public/products?page=0&size=20");
       });
 
@@ -2308,7 +2435,7 @@ describe("transformWebToMobile", () => {
 
         const grid = gridOf(result);
         expect(grid.type).toBe("gridView");
-        expect((grid.props as Record<string, unknown>).requestUrl).toBeUndefined();
+        expect((grid.props as Record<string, unknown>).data).toBeUndefined();
         expect(grid.itemBuilder).toBeUndefined();
       });
     });

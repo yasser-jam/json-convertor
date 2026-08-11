@@ -474,6 +474,44 @@ function buildCollectionRequestUrl(collection: string | Record<string, unknown>,
   return `/api/v1/public/collections/${encodeURIComponent(collectionId)}/products?page=0&size=${size}`;
 }
 
+/** Mobile engine reads collection requests from `props.data` (docs/02-config-and-json.md). */
+function buildCollectionDataBlock(
+  requestKey: string,
+  requestUrl: string,
+  id: string,
+  size: number,
+  collection?: string
+): Record<string, unknown> {
+  const capped = Math.min(size, 20);
+  return {
+    source: "collection",
+    id,
+    requestKey,
+    requestUrl,
+    page: 0,
+    size: capped,
+    ...(collection && collection !== "all" ? { collection } : {}),
+  };
+}
+
+function buildAddToCartTap(): Record<string, unknown> {
+  if (_bindingScope?.kind === "product" && _bindingScope.base === "item") {
+    return {
+      type: "cubitCall",
+      cubit: "cart",
+      method: "addItem",
+      params: {
+        variantId: { source: "item", field: "variantId" },
+        quantity: { source: "value", value: 1 },
+        productTitle: { source: "item", field: "name" },
+        unitPrice: { source: "item", field: "price" },
+        thumbnailUrl: { source: "item", field: "primaryImageUrl" },
+      },
+    };
+  }
+  return { type: "cubitCall", cubit: "cart", method: "addItem" };
+}
+
 /**
  * `metadata.apiUrl` → a relative mobile path. Strips the host, rewrites `/admin/`
  * to `/public/`, and guarantees the `/api/v1` prefix the engine expects
@@ -645,7 +683,7 @@ function resolveTap(props: Record<string, unknown>, rootProps: Record<string, un
         onSuccess: { type: "navigate", route: "/auth/login", navigation_type: "clear_stack" },
       };
     case "addToCart":
-      return { type: "cubitCall", cubit: "cart", method: "addItem" };
+      return buildAddToCartTap();
     case "addToWishlist":
       return { type: "navigate", route: "/wishlist", navigation_type: "push" };
     case "makeOrder":
@@ -2142,10 +2180,15 @@ function transformProductGrid(block: Record<string, unknown>, rootProps: Record<
       crossAxisSpacing: gap,
       childAspectRatio: 0.75,
       enableInnerScroll: false,
-      requestKey,
-      requestUrl,
       emptyMessage: "لا توجد منتجات",
       errorMessage: "حدث خطأ",
+      data: buildCollectionDataBlock(
+        requestKey,
+        requestUrl,
+        "products-grid",
+        maxProducts,
+        typeof collection === "string" && collection !== "all" ? collection : undefined
+      ),
     },
     itemBuilder: {
       type: "repeat",
@@ -2195,12 +2238,12 @@ function transformProductsTemplateSection(
   const columns = parseInt(String(props.columnsMobile || props.columns || 2), 10) || 2;
   const gap = resolveGridGap(props.gridGap as string | number);
   const requestKey = "product-list";
+  const size = 20;
+  const collectionRef =
+    preset === "products-grid" ? resolveCollectionRef(props.collection) : "all";
   // products-page has no collection picker — its grid is the whole catalogue, filtered
   // at runtime by the search / category controls that sit in the wrapper Section.
-  const requestUrl = buildCollectionRequestUrl(
-    preset === "products-grid" ? resolveCollectionRef(props.collection) : "all",
-    20
-  );
+  const requestUrl = buildCollectionRequestUrl(collectionRef, size);
 
   const item = withBindingScope({ kind: "product", base: "item" }, () =>
     transformBlock(template, rootProps)
@@ -2209,6 +2252,13 @@ function transformProductsTemplateSection(
     addWarning(`Section preset "${preset}" has an empty card template; the grid was dropped`);
     return null;
   }
+
+  const itemWithTap = item.tap
+    ? item
+    : {
+        ...item,
+        tap: { type: "navigate", route: "/product/details/:productId", navigation_type: "push" },
+      };
 
   return {
     id: generateId("products-grid"),
@@ -2219,15 +2269,20 @@ function transformProductsTemplateSection(
       crossAxisSpacing: gap,
       childAspectRatio: 0.75,
       enableInnerScroll: false,
-      requestKey,
-      requestUrl,
       emptyMessage: "لا توجد منتجات",
       errorMessage: "حدث خطأ",
+      data: buildCollectionDataBlock(
+        requestKey,
+        requestUrl,
+        "product-list",
+        size,
+        collectionRef !== "all" ? collectionRef : undefined
+      ),
     },
     itemBuilder: {
       type: "repeat",
       source: `dataContext.requests.${requestKey}.data`,
-      item,
+      item: itemWithTap,
     },
   };
 }
@@ -4790,6 +4845,259 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
     }),
   },
   {
+    // ── Third canonical example ────────────────────────────────────────────────
+    // Builds on Example 2 (about us · login · otp, serif theme) and adds commerce
+    // binding: products-page preset (full catalogue + addToCart) and cart template.
+    //   /                 about us + login CTA (+ browse products CTA)
+    //   /login            auth.requestOtp
+    //   /auth/otp-reset   auth.verifyOtp → /home
+    //   /products         products-page preset ⇒ gridView + props.data + itemBuilder
+    //   /cart             cartLineId Group ⇒ listView over cart.items
+    label: "Mobile Site JSON · about us · login · otp · products · cart — serif theme",
+    json: PK({
+      root: {
+        props: {
+          title: "دار الحرفة", direction: "rtl", language: "ar",
+          bodyFont: "amiri",
+          fontOption1: "el-messiri",
+          fontOption2: "noto-naskh-arabic",
+          primary: "#7c3f5d",
+          surface: "#faf3ee",
+          text: "#2f2320",
+          neutral: "#8a7268",
+          success: "#4f7a4a",
+          warning: "#b8802a",
+          error: "#a3423a",
+          dark: "#2a1c22",
+          radiusSm: "10px",
+          radiusMd: "18px",
+          radiusLg: "28px",
+          radiusXl: "36px",
+          spacingSideNarrow: "14px",
+          spacingSideMedium: "20px",
+          spacingSideWide: "40px",
+          spacingVerticalNarrow: "32px",
+          spacingVerticalMedium: "56px",
+          spacingVerticalWide: "96px",
+          buttonSmHeight: "40px",
+          buttonMdHeight: "52px",
+          buttonLgHeight: "60px",
+          breakpointMobileMax: 767,
+          breakpointTabletMax: 1023,
+        },
+      },
+      zones: {
+        "root:zone-drawer": [{
+          type: "ZoneDrawer",
+          props: {
+            is_active: true, is_mobile_only: true, zoneKey: "site-drawer", side: "right",
+            backgroundColor: "#faf3ee", overlay: true, showCloseButton: true,
+            slot: [
+              { type: "ContentHeading", props: { text: "دار الحرفة", level: "3", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-bold", color: "theme-primary" } },
+              { type: "ContentDivider", props: { thickness: "1px", colorMode: "theme", colorTheme: "neutral" } },
+              { type: "ContentLink", props: { title: "من نحن", link: { kind: "page", pageId: "/" }, align: "right", color: "theme-text", hoverEffect: "underline", fontSize: "theme-md", icon: "none" } },
+              { type: "ContentLink", props: { title: "المنتجات", link: { kind: "page", pageId: "/products" }, align: "right", color: "theme-text", hoverEffect: "underline", fontSize: "theme-md", icon: "none" } },
+              { type: "ContentLink", props: { title: "تسجيل الدخول", link: { kind: "page", pageId: "/login" }, align: "right", color: "theme-primary", hoverEffect: "underline", fontSize: "theme-md", icon: "none" } },
+            ],
+          },
+        }],
+      },
+      pages: [
+        {
+          path: "/", slug: "/", name: "من نحن", link: "/", title: "من نحن",
+          description: "تعرّف على دار الحرفة", iconName: "home",
+          content: [
+            {
+              type: "Section",
+              props: {
+                name: "عنوان من نحن", anchorId: "", visible: true,
+                paddingTop: "56px", paddingBottom: "20px", paddingHorizontal: "20px",
+                backgroundColor: "#faf3ee", theme: "dark", maxWidth: "1280px",
+                columns: 1, columnsMobile: 1, gridGap: "20px",
+                content: [
+                  { type: "ContentHeading", props: { text: "من نحن", level: "1", textAlign: "right", fontFamily: "body", fontSize: "theme-2xl", fontWeight: "theme-bold", lineHeight: "theme-tight", color: "theme-primary" } },
+                  { type: "ContentParagraph", props: { text: "ورشة عائلية تصنع الأثاث الخشبي يدويًا منذ عام ١٩٧٨.", textAlign: "right", fontFamily: "body", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-normal", color: "theme-neutral" } },
+                  { type: "ContentDivider", props: { thickness: "1px", colorMode: "theme", colorTheme: "neutral" } },
+                ],
+              },
+            },
+            {
+              type: "Section",
+              props: {
+                name: "بطاقات من نحن", visible: true,
+                paddingTop: "0px", paddingBottom: "20px", paddingHorizontal: "20px",
+                backgroundColor: "#faf3ee", maxWidth: "1280px",
+                columns: 2, columnsMobile: 1, gridGap: "20px",
+                content: [
+                  {
+                    type: "Group",
+                    props: {
+                      direction: "column", gap: 8, alignItems: "stretch", justifyContent: "flex-start", wrap: "nowrap",
+                      backgroundColor: "theme-surface", padding: "20px", borderRadius: "theme-md", boxShadow: "sm",
+                      content: [
+                        { type: "ContentHeading", props: { text: "قصتنا", level: "2", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-semibold", color: "theme-text" } },
+                        { type: "ContentParagraph", props: { text: "بدأت الورشة بغرفة صغيرة وأربع أدوات. اليوم نصنع قطعًا تدوم لأجيال، بالطريقة نفسها التي تعلّمها جدّي.", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-relaxed", color: "theme-neutral" } },
+                      ],
+                    },
+                  },
+                  {
+                    type: "Group",
+                    props: {
+                      direction: "column", gap: 8, alignItems: "stretch", justifyContent: "flex-start", wrap: "nowrap",
+                      backgroundColor: "theme-surface", padding: "20px", borderRadius: "theme-md", boxShadow: "sm",
+                      content: [
+                        { type: "ContentHeading", props: { text: "حرفتنا", level: "2", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-semibold", color: "theme-text" } },
+                        { type: "ContentParagraph", props: { text: "خشب الجوز والزان المعالج طبيعيًا، وتجميع بالنقر والفتحة بلا مسامير. كل قطعة تُصقل يدويًا.", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-relaxed", color: "theme-neutral" } },
+                      ],
+                    },
+                  },
+                  {
+                    type: "Group",
+                    props: {
+                      direction: "column", gap: 8, alignItems: "stretch", justifyContent: "flex-start", wrap: "nowrap",
+                      backgroundColor: "theme-surface", padding: "20px", borderRadius: "theme-md", boxShadow: "sm",
+                      content: [
+                        { type: "ContentHeading", props: { text: "وعدنا", level: "2", textAlign: "right", fontSize: "theme-lg", fontWeight: "theme-semibold", color: "theme-text" } },
+                        { type: "ContentParagraph", props: { text: "ضمان خمس سنوات على كل قطعة، وإصلاح مجاني لأي عيب في التصنيع مدى الحياة.", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-relaxed", color: "theme-neutral" } },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              type: "Section",
+              props: {
+                name: "دعوة للتسجيل والتسوق", visible: true,
+                paddingTop: "0px", paddingBottom: "56px", paddingHorizontal: "20px",
+                backgroundColor: "#faf3ee", columns: 1, columnsMobile: 1, gridGap: "20px",
+                content: [
+                  { type: "ContentButton", props: { label: "تصفّح المنتجات", align: "center", destinationType: "link", link: { kind: "page", pageId: "/products" }, buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+                  { type: "ContentButton", props: { label: "تسجيل الدخول", align: "center", destinationType: "link", link: { kind: "page", pageId: "/login" }, buttonVariantMode: "variant", buttonVariant: "secondary", buttonVariantSize: "lg" } },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          path: "/login", slug: "/login", name: "تسجيل الدخول", link: "/login",
+          title: "تسجيل الدخول", description: "الدخول إلى حسابك", iconName: "user",
+          isCustom: true,
+          content: [{
+            type: "Section",
+            props: {
+              name: "نموذج الدخول", visible: true,
+              paddingTop: "56px", paddingBottom: "56px", paddingHorizontal: "20px",
+              backgroundColor: "#faf3ee", maxWidth: "480px",
+              columns: 1, columnsMobile: 1, gridGap: "20px",
+              content: [
+                { type: "ContentHeading", props: { text: "تسجيل الدخول", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-primary" } },
+                { type: "ContentInput", props: { label: "رقم الهاتف", name: "phone", inputType: "tel", placeholder: "09xxxxxxxx", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentInput", props: { label: "الاسم الكامل", name: "fullName", inputType: "text", placeholder: "الاسم الثلاثي", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentButton", props: { label: "إرسال رمز التحقق", align: "center", destinationType: "action", buttonAction: "login", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+              ],
+            },
+          }],
+        },
+        {
+          path: "/auth/otp-reset", slug: "/auth/otp-reset", name: "رمز التحقق", link: "/auth/otp-reset",
+          title: "رمز التحقق", description: "تأكيد رقم الهاتف", iconName: "shield",
+          isCustom: true,
+          content: [{
+            type: "Section",
+            props: {
+              name: "نموذج التحقق", visible: true,
+              paddingTop: "56px", paddingBottom: "56px", paddingHorizontal: "20px",
+              backgroundColor: "#faf3ee", maxWidth: "480px",
+              columns: 1, columnsMobile: 1, gridGap: "20px",
+              content: [
+                { type: "ContentHeading", props: { text: "رمز التحقق", level: "1", textAlign: "center", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-primary" } },
+                { type: "ContentParagraph", props: { text: "أدخل الرمز المكوّن من ستة أرقام الذي أرسلناه إلى رقم هاتفك.", textAlign: "center", fontSize: "theme-md", fontWeight: "theme-light", lineHeight: "theme-normal", color: "theme-neutral" } },
+                { type: "ContentInput", props: { label: "", name: "otpCode", inputType: "text", placeholder: "______", required: true, prependIcon: "none", inputAction: "" } },
+                { type: "ContentButton", props: { label: "تأكيد", align: "center", destinationType: "action", buttonAction: "verifyOtp", submitRedirectUrl: "/", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "lg" } },
+              ],
+            },
+          }],
+        },
+        {
+          path: "/products", slug: "/products", name: "المنتجات", link: "/products",
+          title: "كل المنتجات", description: "تصفّح منتجات دار الحرفة", iconName: "package",
+          isCustom: true,
+          content: [
+            {
+              type: "Section",
+              props: {
+                name: "مقدمة", visible: true,
+                paddingTop: "32px", paddingBottom: "0px", paddingHorizontal: "20px",
+                backgroundColor: "#faf3ee", columns: 1, columnsMobile: 1, gridGap: "20px",
+                content: [
+                  { type: "ContentHeading", props: { text: "منتجاتنا", level: "2", textAlign: "right", fontSize: "theme-xl", fontWeight: "theme-bold", color: "theme-primary" } },
+                  { type: "ContentParagraph", props: { text: "اضغط على أي منتج لعرض تفاصيله، أو أضفه مباشرة إلى السلة.", textAlign: "right", fontSize: "theme-sm", color: "theme-neutral" } },
+                ],
+              },
+            },
+            {
+              type: "Section",
+              props: {
+                name: "Catalogue", visible: true,
+                paddingTop: "16px", paddingBottom: "40px", paddingHorizontal: "20px",
+                backgroundColor: "#faf3ee", maxWidth: "1280px",
+                columns: 3, columnsMobile: 2, gridGap: "20px",
+                metadata: { preset: "products-page" },
+                sectionKind: "products-page",
+                content: [{
+                  type: "Group",
+                  props: {
+                    product: null, metadata: null,
+                    direction: "column", gap: 10, alignItems: "stretch", justifyContent: "flex-start", wrap: "nowrap",
+                    backgroundColor: "theme-surface", padding: "12px", borderRadius: "theme-md", boxShadow: "sm",
+                    language: "ar",
+                    content: [
+                      { type: "ContentImage", props: { src: "https://placehold.co/400x400", valueContext: { path: "images[0].url" }, alt: "صورة المنتج", altValueContext: { path: "product.title" }, align: "center", objectFit: "cover", radius: "theme-md", maxWidth: "100%" } },
+                      { type: "ContentHeading", props: { text: "اسم المنتج", valueContext: { path: "product.title" }, level: "3", textAlign: "right", fontSize: "theme-md", fontWeight: "theme-semibold", color: "theme-text" } },
+                      { type: "ContentParagraph", props: { text: "٠ ل.س", valueContext: { path: "pricing.displayPrice" }, textAlign: "right", fontSize: "theme-sm", fontWeight: "theme-semibold", color: "theme-primary" } },
+                      { type: "ContentButton", props: { label: "إضافة إلى السلة", align: "center", destinationType: "action", buttonAction: "addToCart", buttonVariantMode: "variant", buttonVariant: "primary", buttonVariantSize: "sm" } },
+                    ],
+                  },
+                }],
+              },
+            },
+          ],
+        },
+        {
+          path: "/cart", slug: "/cart", name: "السلة", link: "/cart", title: "سلة التسوق",
+          description: "عرض سلة التسوق", iconName: "shopping-cart",
+          content: [{
+            type: "Section",
+            props: {
+              name: "سلة التسوق", visible: true,
+              paddingTop: "32px", paddingBottom: "32px", paddingHorizontal: "20px",
+              backgroundColor: "#faf3ee", maxWidth: "900px", columns: 1, columnsMobile: 1, gridGap: "20px",
+              content: [
+                { type: "ContentHeading", props: { text: "سلة التسوق", level: "2", textAlign: "right", fontSize: "theme-2xl", fontWeight: "theme-bold", color: "theme-primary" } },
+                {
+                  type: "Group",
+                  props: {
+                    cartLineId: "prod-001:{\"Color\":\"Red\"}",
+                    direction: "row", gap: 12, alignItems: "center", language: "ar",
+                    content: [
+                      { type: "ContentImage", props: { src: "https://placehold.co/144x144", valueContext: { path: "images[0].url" }, maxWidth: "72px", radius: "theme-md" } },
+                      { type: "ContentHeading", props: { text: "اسم المنتج", valueContext: { path: "product.title" }, level: "3", fontSize: "theme-md", textAlign: "right" } },
+                      { type: "ContentParagraph", props: { text: "٠ ل.س", valueContext: { path: "pricing.displayLineTotal" }, fontSize: "theme-sm", color: "theme-neutral", textAlign: "right" } },
+                      { type: "ContentButton", props: { label: "−", destinationType: "action", buttonAction: "cartQtyDecrease", buttonVariantMode: "fixed", buttonVariantSize: "sm" } },
+                      { type: "ContentParagraph", props: { text: "1", valueContext: { path: "quantity" }, textAlign: "center", fontSize: "theme-md" } },
+                      { type: "ContentButton", props: { label: "+", destinationType: "action", buttonAction: "cartQtyIncrease", buttonVariantMode: "fixed", buttonVariantSize: "sm" } },
+                    ],
+                  },
+                },
+              ],
+            },
+          }],
+        },
+      ],
+    }),
+  },
+  {
     legacy: true,
     legacyReason: "Uses SiteHeader / SiteFooter / ZonePopup / CartIconButton — none are in the mobile block set (docs/BLOCKS-MOBILE.md).",
     label: "Site JSON (root + zones + pages)",
@@ -5068,7 +5376,7 @@ export const EXAMPLE_PRESETS: ExamplePreset[] = [
   },
   {
     legacy: true,
-    legacyReason: "Superseded by the /products page of the 3-page mobile example.",
+    legacyReason: "Superseded by Example 3 (products binding) and Example 1's /products page.",
     label: "Products Grid preset (bound card template)",
     json: PK({
       root: {

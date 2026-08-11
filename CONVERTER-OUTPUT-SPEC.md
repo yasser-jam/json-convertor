@@ -733,7 +733,7 @@ Sections [§ 6.29](#629-timer)–[§ 6.32](#632-switchfield) document mobile pri
 | `login` *(no sibling inputs)* | `{ "type": "navigate", "route": "/auth/login", "navigation_type": "push" }` — a link to the auth screen; that page must exist in `pages[]` ([§ 7.2](#72-auth-is-requestotp--verifyotp--there-is-no-login-method))                               |
 | `login` *(inside a Section with `ContentInput` fields)* | `{ "type": "cubitCall", "cubit": "auth", "method": "requestOtp", "requireValidForm": true, "formId": "otp-request-form", "params": { "phone": { "source": "form", "field": "phone" }, "fullName": { "source": "form", "field": "fullName" }, "tenantSlug": { "source": "app", "field": "tenantSlug" } }, "onSuccess": { "type": "navigate", "route": "/auth/otp-reset", "navigation_type": "clear_stack" } }` — **step 1 of the OTP flow, not a login**; the Section becomes a `form`; see [§ 6.34](#auth-forms--the-form-wrapper) |
 | `logout`                     | `{ "type": "cubitCall", "cubit": "auth", "method": "logout", "onSuccess": { "type": "navigate", "route": "/auth/login", "navigation_type": "clear_stack" } }`                                                                                   |
-| `addToCart`                  | `{ "type": "cubitCall", "cubit": "cart", "method": "addItem" }`                                                                                                                                                                                 |
+| `addToCart`                  | `{ "type": "cubitCall", "cubit": "cart", "method": "addItem" }` — inside a product repeat template (`item.*` scope), also emit `params` with `variantId`, `quantity`, `productTitle`, `unitPrice`, `thumbnailUrl` resolved from `item` ([§ 9.7](#97-products-grid--products-page-the-unexpanded-card-template)) |
 | `addToWishlist`              | `{ "type": "navigate", "route": "/wishlist", "navigation_type": "push" }`                                                                                                                                                                       |
 | `makeOrder`                  | `{ "type": "cubitCall", "cubit": "checkout", "method": "placeOrder" }` — optional `params.guestEmail` from guest contact form (§6.33)                                                                                                           |
 | `cartQtyIncrease`            | `{ "type": "cubitCall", "cubit": "cart", "method": "updateQuantity", "params": { "variantId": { "source": "item", "field": "variantId" }, "delta": { "source": "value", "value": 1 } } }`                                                       |
@@ -2943,10 +2943,17 @@ These blocks emit nodes that fetch data from the API at runtime.
     "crossAxisSpacing": 12,
     "childAspectRatio": 0.75,
     "enableInnerScroll": false,
-    "requestKey": "product-list",
-    "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=20",
     "emptyMessage": "لا توجد منتجات",
-    "errorMessage": "حدث خطأ"
+    "errorMessage": "حدث خطأ",
+    "data": {
+      "source": "collection",
+      "id": "product-list",
+      "requestKey": "product-list",
+      "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=20",
+      "page": 0,
+      "size": 20,
+      "collection": "coll_featured"
+    }
   },
   "itemBuilder": {
     "type": "repeat",
@@ -3141,10 +3148,17 @@ The one exception to §9.6. `products-grid` and `products-page` Sections are **n
     "crossAxisSpacing": 16,
     "childAspectRatio": 0.75,
     "enableInnerScroll": false,
-    "requestKey": "product-list",
-    "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=20",
     "emptyMessage": "لا توجد منتجات",
-    "errorMessage": "حدث خطأ"
+    "errorMessage": "حدث خطأ",
+    "data": {
+      "source": "collection",
+      "id": "product-list",
+      "requestKey": "product-list",
+      "requestUrl": "/api/v1/public/collections/coll_featured/products?page=0&size=20",
+      "page": 0,
+      "size": 20,
+      "collection": "coll_featured"
+    }
   },
   "itemBuilder": {
     "type": "repeat",
@@ -3307,7 +3321,7 @@ Use this checklist before sending converter output to the engine.
 
 ### API / data
 
-- Relative paths only; `requestKey` + `requestUrl` flat in `props`
+- Relative paths only; collection `requestKey` + `requestUrl` nested in `props.data` on catalog `gridView` / `listView`
 - `itemBuilder.source` = `dataContext.requests.<requestKey>.data`; cart uses `cart.items`
 
 ### Merchant-specific (no assumptions)
@@ -3878,7 +3892,18 @@ for the trigger conditions.
               "id": "button-93",
               "type": "button",
               "props": { "label": "إضافة إلى السلة", "variant": "elevated", "height": 36 },
-              "tap": { "type": "cubitCall", "cubit": "cart", "method": "addItem" }
+              "tap": {
+                "type": "cubitCall",
+                "cubit": "cart",
+                "method": "addItem",
+                "params": {
+                  "variantId": { "source": "item", "field": "variantId" },
+                  "quantity": { "source": "value", "value": 1 },
+                  "productTitle": { "source": "item", "field": "name" },
+                  "unitPrice": { "source": "item", "field": "price" },
+                  "thumbnailUrl": { "source": "item", "field": "primaryImageUrl" }
+                }
+              }
             }
           ]
         }
@@ -3897,6 +3922,24 @@ Points worth noting:
   `altValueContext` is dropped, because `semanticsLabelPath` is not an engine prop.
 - The button label stays static. There is no `labelPath` on `button`.
 - `collection.id` builds the `requestUrl`; `size` is capped at 20.
+- `addToCart` inside the repeat template emits `cart.addItem` with `params` from `item.*`.
+- The card template root gets `tap` → `/product/details/:productId` when none is authored.
+
+### 14.4 Example 3 — About us · login · otp · products · cart
+
+Builds on [§ 15](#15-worked-example-b--three-page-content-site-custom-theme) (Example 2) and adds
+**dynamic product binding**. Available as the third preset in the converter playground
+(`lib/transformer.ts` → `EXAMPLE_PRESETS[2]`).
+
+| Page     | Route (out)       | What it exercises |
+| -------- | ----------------- | ----------------- |
+| About us | `/home`           | Same as Example 2 — about-us grid + CTAs to `/products` and `/login` |
+| Login    | `/login`          | `auth.requestOtp` (phone + fullName form) |
+| OTP      | `/auth/otp-reset` | `auth.verifyOtp` → `/home` (shell-excluded, not a tab) |
+| Products | `/products`       | `metadata.preset: "products-page"` — card-template `Group` ⇒ `gridView` + `props.data` + `itemBuilder.repeat` + `addToCart` |
+| Cart     | `/cart`           | `cartLineId` `Group` ⇒ `listView` + `itemBuilder.repeat` over `cart.items` |
+
+Same serif theme and `ZoneDrawer` as Example 2. Tabs derived: `tab-home`, `tab-login`, `tab-products`, `tab-cart`.
 
 ---
 
